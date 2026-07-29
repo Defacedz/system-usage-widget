@@ -1,0 +1,17 @@
+# Build output (the installer compiles into %TEMP%, but just in case)
+*.exe
+*.dll
+*.pdb
+bin/
+obj/
+
+# Signing material - must never be committed
+*.cer
+*.pfx
+*.snk
+
+# Local runtime state
+log.txt
+config.json
+tokens.json
+*.credentials.json

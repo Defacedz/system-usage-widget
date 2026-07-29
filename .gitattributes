@@ -1,0 +1,11 @@
+# Windows scripts must keep CRLF, including inside the ZIP that GitHub
+# generates from "Download code": cmd.exe mishandles LF-only batch files.
+*.bat   text eol=crlf
+*.ps1   text eol=crlf
+
+# The C# source is UTF-8 with a BOM on purpose (see README): treating it as
+# text is fine, Git never touches the BOM.
+*.cs    text eol=crlf
+
+*.md    text
+*.manifest text
