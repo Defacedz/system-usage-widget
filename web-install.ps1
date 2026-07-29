@@ -19,6 +19,14 @@ Write-Host '  Source: https://github.com/Defacedz/system-usage-widget'
 Write-Host ''
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+# Sweep up anything an interrupted earlier run left behind: closing this
+# window during the elevated step skips the finally block below. Only
+# touch folders older than an hour, so a concurrent run is left alone.
+Get-ChildItem $env:TEMP -Directory -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -like 'systemwidget-*' -and $_.CreationTime -lt (Get-Date).AddHours(-1) } |
+    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+
 $work = Join-Path $env:TEMP ('systemwidget-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
 New-Item -ItemType Directory -Path $work -Force | Out-Null
 
