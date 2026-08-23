@@ -14,6 +14,7 @@ using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Markup;
 using System.Windows.Media;
 using System.Windows.Threading;
 
@@ -404,7 +405,6 @@ namespace SystemWidgetApp
     {
         public Grid Root;
         public TextBlock Percent;
-        public TextBlock Temp;
         public Border Fill;
         public Border Track;
         public string Name;
@@ -417,18 +417,19 @@ namespace SystemWidgetApp
         public GaugeRow(string name)
         {
             Name = name;
-            Root = new Grid { Height = 18, Width = 172 };
-            Root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(38) });
-            Root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(38) });
-            Root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(66) });
-            Root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(30) });
+            Root = new Grid { Height = 18, Width = 110 };
+            Root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(34) });
+            Root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(28) });
+            Root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(48) });
 
+            // Centred so GPU/VRAM (and CPU/RAM) share the same axis.
             var label = new TextBlock
             {
                 Text = name,
-                FontSize = 8.5,
+                FontSize = 8,
                 FontWeight = FontWeights.SemiBold,
                 Foreground = BrushFrom("#8B91A7"),
+                TextAlignment = TextAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center
             };
             Grid.SetColumn(label, 0);
@@ -447,7 +448,7 @@ namespace SystemWidgetApp
 
             Track = new Border
             {
-                Width = 62,
+                Width = 48,
                 Height = 4,
                 CornerRadius = new CornerRadius(2),
                 Background = BrushFrom("#303442"),
@@ -465,23 +466,6 @@ namespace SystemWidgetApp
             Track.Child = Fill;
             Grid.SetColumn(Track, 2);
             Root.Children.Add(Track);
-
-            Temp = new TextBlock
-            {
-                Text = "",
-                FontSize = 9,
-                Foreground = BrushFrom("#B8BCCB"),
-                TextAlignment = TextAlignment.Right,
-                VerticalAlignment = VerticalAlignment.Center
-            };
-            Grid.SetColumn(Temp, 3);
-            Root.Children.Add(Temp);
-        }
-
-        // degrees < 0 means "unknown": the cell goes blank instead of lying
-        public void SetTemp(double degrees)
-        {
-            Temp.Text = degrees < 0 ? "" : (int)Math.Round(degrees) + "°";
         }
 
         static string Blend(
@@ -496,7 +480,7 @@ namespace SystemWidgetApp
             return string.Format("#{0:X2}{1:X2}{2:X2}", r, g, b);
         }
 
-        static string Color(double value)
+        public static string Color(double value)
         {
             value = Math.Max(0, Math.Min(100, value));
 
@@ -522,6 +506,105 @@ namespace SystemWidgetApp
             Percent.Text = "--";
             Percent.Foreground = BrushFrom("#6C7086");
             Fill.Width = 0;
+        }
+    }
+
+    // Vertical thermometer spanning both gauge rows: micro-label on top, tube
+    // above a small bulb, value underneath - all on one centred axis. The
+    // colour follows the same green-amber-red gradient as the gauges,
+    // mapping 20-90 degrees Celsius onto the tube.
+    public class ThermoGauge
+    {
+        public Canvas Root;
+        TextBlock _tag, _value;
+        Border _tubeFill;
+        System.Windows.Shapes.Ellipse _bulbFill;
+
+        static Brush BrushFrom(string hex)
+        {
+            return (Brush)new BrushConverter().ConvertFromString(hex);
+        }
+
+        const double TubeTop = 10, TubeH = 13;
+
+        public ThermoGauge(string tag)
+        {
+            Root = new Canvas { Width = 20, Height = 36, HorizontalAlignment = HorizontalAlignment.Center };
+
+            _tag = new TextBlock
+            {
+                Text = tag, FontSize = 6.5, FontWeight = FontWeights.SemiBold,
+                Foreground = BrushFrom("#6C7086"), Width = 20, TextAlignment = TextAlignment.Center
+            };
+            Canvas.SetLeft(_tag, 0); Canvas.SetTop(_tag, 0);
+            Root.Children.Add(_tag);
+
+            var tubeTrack = new Border
+            {
+                Width = 4, Height = TubeH, CornerRadius = new CornerRadius(2),
+                Background = BrushFrom("#303442")
+            };
+            Canvas.SetLeft(tubeTrack, 8); Canvas.SetTop(tubeTrack, TubeTop);
+            Root.Children.Add(tubeTrack);
+
+            // The bulb overlaps the tube and its fill is the same size as its
+            // track: no ring, no seam - one continuous thermometer.
+            var bulbBack = new System.Windows.Shapes.Ellipse
+            {
+                Width = 6, Height = 6, Fill = BrushFrom("#303442")
+            };
+            Canvas.SetLeft(bulbBack, 7); Canvas.SetTop(bulbBack, TubeTop + TubeH - 2);
+            Root.Children.Add(bulbBack);
+
+            _tubeFill = new Border
+            {
+                Width = 4, Height = 0, CornerRadius = new CornerRadius(2),
+                Background = Brushes.Transparent
+            };
+            Canvas.SetLeft(_tubeFill, 8); Canvas.SetTop(_tubeFill, TubeTop + TubeH);
+            Root.Children.Add(_tubeFill);
+
+            _bulbFill = new System.Windows.Shapes.Ellipse
+            {
+                Width = 6, Height = 6, Fill = Brushes.Transparent
+            };
+            Canvas.SetLeft(_bulbFill, 7); Canvas.SetTop(_bulbFill, TubeTop + TubeH - 2);
+            Root.Children.Add(_bulbFill);
+
+            _value = new TextBlock
+            {
+                Text = "", FontSize = 8.5, Foreground = BrushFrom("#B8BCCB"),
+                Width = 20, TextAlignment = TextAlignment.Center
+            };
+            Canvas.SetLeft(_value, 0); Canvas.SetTop(_value, 26.5);
+            Root.Children.Add(_value);
+        }
+
+        // degrees < 0 means "unknown": everything goes blank instead of lying
+        public void Set(double degrees)
+        {
+            if (degrees < 0)
+            {
+                _value.Text = "";
+                _tubeFill.Height = 0;
+                _bulbFill.Fill = Brushes.Transparent;
+                return;
+            }
+            double fraction = Math.Max(0, Math.Min(1, (degrees - 20) / 70.0));
+            string color = GaugeRow.Color(fraction * 100);
+            double height = Math.Max(3, TubeH * fraction);
+            // +2 dips the fill into the bulb so tube and bulb read as one
+            _tubeFill.Height = height + 2;
+            Canvas.SetTop(_tubeFill, TubeTop + (TubeH - height));
+            _tubeFill.Background = BrushFrom(color);
+            _bulbFill.Fill = BrushFrom(color);
+            _value.Text = (int)Math.Round(degrees) + "°";
+        }
+
+        // Feeds the red-border alert: how hot on the 0-100 gauge scale.
+        public static double AlertPct(double degrees)
+        {
+            return degrees < 0 ? 0 : Math.Max(0, Math.Min(100, (degrees - 20) / 70.0 * 100));
         }
     }
 
@@ -556,6 +639,27 @@ namespace SystemWidgetApp
         readonly GaugeRow _vram;
         readonly GaugeRow _cpu;
         readonly GaugeRow _ram;
+        readonly ThermoGauge _gpuThermo;
+        readonly ThermoGauge _cpuThermo;
+
+        // The thermometer spans the two gauge rows and is centred in the
+        // space left between the bars and the separator (or the border).
+        static Grid MakeHalf(GaugeRow top, GaugeRow bottom, ThermoGauge thermo)
+        {
+            var half = new Grid { Width = 148 };
+            half.RowDefinitions.Add(new RowDefinition { Height = new GridLength(18) });
+            half.RowDefinitions.Add(new RowDefinition { Height = new GridLength(18) });
+            half.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(110) });
+            half.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+            Grid.SetRow(top.Root, 0); Grid.SetColumn(top.Root, 0);
+            Grid.SetRow(bottom.Root, 1); Grid.SetColumn(bottom.Root, 0);
+            Grid.SetRow(thermo.Root, 0); Grid.SetRowSpan(thermo.Root, 2); Grid.SetColumn(thermo.Root, 1);
+            half.Children.Add(top.Root);
+            half.Children.Add(bottom.Root);
+            half.Children.Add(thermo.Root);
+            return half;
+        }
         readonly Config _config;
         MenuItem[] _opacityItems;
         IntPtr _handle = IntPtr.Zero;
@@ -622,24 +726,23 @@ namespace SystemWidgetApp
             };
 
             var rows = new Grid();
-            rows.RowDefinitions.Add(new RowDefinition { Height = new GridLength(18) });
-            rows.RowDefinitions.Add(new RowDefinition { Height = new GridLength(18) });
-            rows.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(172) });
+            rows.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(148) });
             rows.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(11) });
-            rows.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(172) });
-            _gpuPower = new GaugeRow("GPU W");
+            rows.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(148) });
+            _gpuPower = new GaugeRow("GPU");
             _vram = new GaugeRow("VRAM");
             _cpu = new GaugeRow("CPU");
             _ram = new GaugeRow("RAM");
+            _gpuThermo = new ThermoGauge("GPU");
+            _cpuThermo = new ThermoGauge("CPU");
 
-            Grid.SetRow(_gpuPower.Root, 0);
-            Grid.SetColumn(_gpuPower.Root, 0);
-            Grid.SetRow(_vram.Root, 1);
-            Grid.SetColumn(_vram.Root, 0);
-            Grid.SetRow(_cpu.Root, 0);
-            Grid.SetColumn(_cpu.Root, 2);
-            Grid.SetRow(_ram.Root, 1);
-            Grid.SetColumn(_ram.Root, 2);
+            var left = MakeHalf(_gpuPower, _vram, _gpuThermo);
+            Grid.SetColumn(left, 0);
+            rows.Children.Add(left);
+
+            var right = MakeHalf(_cpu, _ram, _cpuThermo);
+            Grid.SetColumn(right, 2);
+            rows.Children.Add(right);
 
             var separator = new Border
             {
@@ -648,17 +751,14 @@ namespace SystemWidgetApp
                 HorizontalAlignment = HorizontalAlignment.Center,
                 Margin = new Thickness(0, 2, 0, 2)
             };
-            Grid.SetRow(separator, 0);
-            Grid.SetRowSpan(separator, 2);
             Grid.SetColumn(separator, 1);
-
-            rows.Children.Add(_gpuPower.Root);
-            rows.Children.Add(_vram.Root);
-            rows.Children.Add(_cpu.Root);
-            rows.Children.Add(_ram.Root);
             rows.Children.Add(separator);
             _root.Child = rows;
             Content = _root;
+
+            // Window-level skin: the dark rounded tooltips apply everywhere.
+            try { Resources.MergedDictionaries.Add(MenuSkin()); }
+            catch { }
 
             BuildMenu();
             Metrics.PrimeCpu();
@@ -837,7 +937,7 @@ namespace SystemWidgetApp
             {
                 _gpuPower.Set(snapshot.GpuPowerPct);
                 _vram.Set(snapshot.VramPct);
-                _gpuPower.SetTemp(snapshot.GpuTempC);
+                _gpuThermo.Set(snapshot.GpuTempC);
                 string gpuTip = string.Format(
                     CultureInfo.InvariantCulture,
                     L.TipGpuPower,
@@ -846,7 +946,11 @@ namespace SystemWidgetApp
                     snapshot.GpuPowerPct,
                     snapshot.GpuLoadPct);
                 if (snapshot.GpuTempC >= 0)
-                    gpuTip += "\n" + string.Format(CultureInfo.InvariantCulture, L.TipTemperature, snapshot.GpuTempC);
+                {
+                    string tempTip = string.Format(CultureInfo.InvariantCulture, L.TipTemperature, snapshot.GpuTempC);
+                    gpuTip += "\n" + tempTip;
+                    _gpuThermo.Root.ToolTip = tempTip;
+                }
                 _gpuPower.Root.ToolTip = gpuTip;
                 _vram.Root.ToolTip = string.Format(
                     L.TipVideoMemory, MemoryText(snapshot.VramUsedMb, snapshot.VramTotalMb));
@@ -855,25 +959,141 @@ namespace SystemWidgetApp
             {
                 _gpuPower.Unavailable();
                 _vram.Unavailable();
-                _gpuPower.SetTemp(-1);
+                _gpuThermo.Set(-1);
                 _gpuPower.Root.ToolTip = L.TipNoGpu;
                 _vram.Root.ToolTip = L.TipNoGpu;
             }
 
             _cpu.Set(snapshot.CpuPct);
             _ram.Set(snapshot.RamPct);
-            _cpu.SetTemp(snapshot.CpuTempC);
+            _cpuThermo.Set(snapshot.CpuTempC);
             string cpuTip = L.TipCpu;
             if (snapshot.CpuTempC >= 0)
-                cpuTip += "\n" + string.Format(CultureInfo.InvariantCulture, L.TipTemperature, snapshot.CpuTempC);
+            {
+                string tempTip = string.Format(CultureInfo.InvariantCulture, L.TipTemperature, snapshot.CpuTempC);
+                cpuTip += "\n" + tempTip;
+                _cpuThermo.Root.ToolTip = tempTip;
+            }
             _cpu.Root.ToolTip = cpuTip;
             _ram.Root.ToolTip = string.Format(
                 L.TipSystemMemory, MemoryText(snapshot.RamUsedMb, snapshot.RamTotalMb));
+
+            // Red frame when anything enters the red zone (>= 90 on the
+            // gauge scale; for temperatures that is about 83 degrees).
+            double worst = Math.Max(
+                Math.Max(snapshot.GpuAvailable ? snapshot.GpuPowerPct : 0, snapshot.CpuPct),
+                Math.Max(snapshot.GpuAvailable ? snapshot.VramPct : 0, snapshot.RamPct));
+            worst = Math.Max(worst, ThermoGauge.AlertPct(snapshot.GpuTempC));
+            worst = Math.Max(worst, ThermoGauge.AlertPct(snapshot.CpuTempC));
+            _root.BorderBrush = BrushFrom(worst >= 90 ? "#CCE05252" : "#22FFFFFF");
+        }
+
+        // Claude-styled skin for the context menu: dark rounded panel, orange
+        // highlight, same palette as the widget. Replaces the gray system look.
+        const string MenuSkinXaml = @"
+<ResourceDictionary xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation'
+                    xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml'>
+  <Style TargetType='ContextMenu'>
+    <Setter Property='OverridesDefaultStyle' Value='True'/>
+    <Setter Property='Template'>
+      <Setter.Value>
+        <ControlTemplate TargetType='ContextMenu'>
+          <Border Background='#F21E2029' BorderBrush='#33FFFFFF' BorderThickness='1'
+                  CornerRadius='7' Padding='4' MinWidth='170'>
+            <ItemsPresenter/>
+          </Border>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+  <Style TargetType='Separator'>
+    <Setter Property='OverridesDefaultStyle' Value='True'/>
+    <Setter Property='Template'>
+      <Setter.Value>
+        <ControlTemplate TargetType='Separator'>
+          <Border Height='1' Background='#26FFFFFF' Margin='6,3'/>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+  <Style TargetType='ToolTip'>
+    <Setter Property='OverridesDefaultStyle' Value='True'/>
+    <Setter Property='Foreground' Value='#E8EAF2'/>
+    <Setter Property='FontSize' Value='11'/>
+    <Setter Property='Template'>
+      <Setter.Value>
+        <ControlTemplate TargetType='ToolTip'>
+          <Border Background='#F21E2029' BorderBrush='#33FFFFFF' BorderThickness='1'
+                  CornerRadius='6' Padding='9,6'>
+            <ContentPresenter/>
+          </Border>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+  <Style TargetType='MenuItem'>
+    <Setter Property='OverridesDefaultStyle' Value='True'/>
+    <Setter Property='Foreground' Value='#E8EAF2'/>
+    <Setter Property='FontSize' Value='11.5'/>
+    <Setter Property='Template'>
+      <Setter.Value>
+        <ControlTemplate TargetType='MenuItem'>
+          <Border x:Name='Bd' Background='Transparent' CornerRadius='4' Padding='8,5'>
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width='15'/>
+                <ColumnDefinition Width='*'/>
+                <ColumnDefinition Width='12'/>
+              </Grid.ColumnDefinitions>
+              <TextBlock x:Name='Check' Text='&#x2713;' FontSize='10' Foreground='#DA7756'
+                         Visibility='Hidden' VerticalAlignment='Center'/>
+              <ContentPresenter Grid.Column='1' ContentSource='Header' VerticalAlignment='Center'/>
+              <TextBlock x:Name='Arrow' Grid.Column='2' Text='&#x203A;' FontSize='12'
+                         Foreground='#9BA0B5' Visibility='Hidden'
+                         VerticalAlignment='Center' HorizontalAlignment='Right'/>
+              <Popup x:Name='PART_Popup' Placement='Right' HorizontalOffset='2' VerticalOffset='-6'
+                     IsOpen='{Binding IsSubmenuOpen, RelativeSource={RelativeSource TemplatedParent}}'
+                     AllowsTransparency='True' Focusable='False'>
+                <Border Background='#F21E2029' BorderBrush='#33FFFFFF' BorderThickness='1'
+                        CornerRadius='7' Padding='4' MinWidth='110'>
+                  <ItemsPresenter/>
+                </Border>
+              </Popup>
+            </Grid>
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property='IsHighlighted' Value='True'>
+              <Setter TargetName='Bd' Property='Background' Value='#2EDA7756'/>
+            </Trigger>
+            <Trigger Property='IsChecked' Value='True'>
+              <Setter TargetName='Check' Property='Visibility' Value='Visible'/>
+            </Trigger>
+            <Trigger Property='HasItems' Value='True'>
+              <Setter TargetName='Arrow' Property='Visibility' Value='Visible'/>
+            </Trigger>
+            <Trigger Property='IsEnabled' Value='False'>
+              <Setter Property='Foreground' Value='#6C7086'/>
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+</ResourceDictionary>";
+
+        static ResourceDictionary _menuSkin;
+        static ResourceDictionary MenuSkin()
+        {
+            if (_menuSkin == null)
+                _menuSkin = (ResourceDictionary)XamlReader.Parse(MenuSkinXaml);
+            return _menuSkin;
         }
 
         void BuildMenu()
         {
             var menu = new ContextMenu();
+            try { menu.Resources.MergedDictionaries.Add(MenuSkin()); }
+            catch { }
             // AssertTopMost must not fight the open menu's popup for the z-order.
             menu.Opened += delegate { _menuOpen = true; };
             menu.Closed += delegate { _menuOpen = false; };
