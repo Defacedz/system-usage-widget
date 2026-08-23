@@ -13,10 +13,18 @@ Loupe ou le clavier visuel. Elle ne se replace au-dessus que si la barre des
 tâches l'a réellement recouverte, au lieu de deux fois par seconde — fini le
 clignotement.
 
-**Températures** : la ligne GPU affiche la température du cœur NVIDIA (via
-`nvidia-smi`), la ligne CPU celle de la zone thermique ACPI quand la machine
-l'expose — beaucoup de cartes mères ne la donnent qu'aux administrateurs ;
-dans ce cas la case reste vide plutôt que d'inventer un chiffre.
+**Températures** : le thermomètre GPU affiche la température du cœur NVIDIA
+(via `nvidia-smi`). Le thermomètre CPU lit le capteur du processeur lui-même
+(« CPU Package ») grâce à la bibliothèque
+[LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor)
+embarquée (MIT) — le moteur de la plupart des outils de capteurs. Cette
+lecture exige les droits administrateur : l'installateur lance le widget
+élevé, et l'option *Lancer au démarrage de Windows* crée une tâche planifiée
+avec privilèges maximaux — aucune fenêtre UAC à l'ouverture de session. Sans
+ces droits, le thermomètre reste vide plutôt que d'inventer un chiffre. C'est
+le seul binaire livré du projet (`lib/LibreHardwareMonitorLib.dll`, avec sa
+dépendance `HidSharp.dll`, toutes deux MIT) — tout le reste se compile depuis
+les sources.
 
 ## Installation
 

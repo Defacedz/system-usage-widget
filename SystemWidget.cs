@@ -365,29 +365,53 @@ namespace SystemWidgetApp
             CpuUsage();
         }
 
-        // ACPI thermal zone via WMI: tenths of Kelvin. Many boards expose
-        // nothing (or only to administrators) - one failure disables the
-        // query for good, so the widget never pays the WMI cost for nothing.
-        static bool _cpuTempBroken;
+        // CPU temperature through the embedded LibreHardwareMonitor library
+        // (MIT), the engine behind most sensor tools. It reads the CPU's own
+        // sensor via its ring-0 helper, which requires administrator rights:
+        // without them the sensor list stays empty and the thermometer stays
+        // blank - never a wrong number. The ACPI "thermal zone" was tried
+        // first and abandoned: it is a chipset probe stuck near 28 degrees C
+        // while the CPU sits at 55.
+        static LibreHardwareMonitor.Hardware.Computer _computer;
+        static bool _lhmBroken;
 
         static void ReadCpuTemperature(Snapshot snapshot)
         {
-            if (_cpuTempBroken) return;
+            if (_lhmBroken) return;
             try
             {
-                double best = -1;
-                using (var searcher = new System.Management.ManagementObjectSearcher(
-                    "root\\wmi", "SELECT CurrentTemperature FROM MSAcpi_ThermalZoneTemperature"))
-                foreach (System.Management.ManagementObject zone in searcher.Get())
+                if (_computer == null)
                 {
-                    double kelvinTenths = Convert.ToDouble(zone["CurrentTemperature"]);
-                    double celsius = kelvinTenths / 10.0 - 273.15;
-                    if (celsius > best && celsius > 0 && celsius < 120) best = celsius;
+                    _computer = new LibreHardwareMonitor.Hardware.Computer { IsCpuEnabled = true };
+                    _computer.Open();
                 }
-                if (best < 0) _cpuTempBroken = true;
-                else snapshot.CpuTempC = best;
+                foreach (LibreHardwareMonitor.Hardware.IHardware hw in _computer.Hardware)
+                {
+                    if (hw.HardwareType != LibreHardwareMonitor.Hardware.HardwareType.Cpu) continue;
+                    hw.Update();
+                    double package = -1, coreMax = -1, any = -1;
+                    foreach (LibreHardwareMonitor.Hardware.ISensor s in hw.Sensors)
+                    {
+                        if (s.SensorType != LibreHardwareMonitor.Hardware.SensorType.Temperature
+                            || !s.Value.HasValue) continue;
+                        string name = s.Name ?? "";
+                        if (name.IndexOf("TjMax", StringComparison.OrdinalIgnoreCase) >= 0) continue;
+                        double v = s.Value.Value;
+                        if (v <= 0 || v >= 120) continue;
+                        if (name.IndexOf("Package", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                            name.IndexOf("Tctl", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                            name.IndexOf("Tdie", StringComparison.OrdinalIgnoreCase) >= 0)
+                            package = Math.Max(package, v);
+                        else if (name.IndexOf("Core Max", StringComparison.OrdinalIgnoreCase) >= 0)
+                            coreMax = Math.Max(coreMax, v);
+                        else
+                            any = Math.Max(any, v);
+                    }
+                    double best = package >= 0 ? package : (coreMax >= 0 ? coreMax : any);
+                    if (best >= 0) snapshot.CpuTempC = best;
+                }
             }
-            catch { _cpuTempBroken = true; }
+            catch { _lhmBroken = true; }
         }
 
         public static Snapshot Read()
@@ -441,7 +465,9 @@ namespace SystemWidgetApp
                 FontSize = 10,
                 FontWeight = FontWeights.SemiBold,
                 Foreground = BrushFrom("#DA7756"),
-                VerticalAlignment = VerticalAlignment.Center
+                VerticalAlignment = VerticalAlignment.Center,
+                // nudge up so its baseline meets the smaller label's baseline
+                Margin = new Thickness(0, 0, 0, 2)
             };
             Grid.SetColumn(Percent, 1);
             Root.Children.Add(Percent);
@@ -642,15 +668,20 @@ namespace SystemWidgetApp
         readonly ThermoGauge _gpuThermo;
         readonly ThermoGauge _cpuThermo;
 
-        // The thermometer spans the two gauge rows and is centred in the
-        // space left between the bars and the separator (or the border).
-        static Grid MakeHalf(GaugeRow top, GaugeRow bottom, ThermoGauge thermo)
+        // The thermometer spans the two gauge rows. Its axis sits on the
+        // OPTICAL midpoint: between the end of the bars and the separator
+        // line for the left half, and the window border for the right half -
+        // a plain centring in the column landed a few pixels left of both.
+        static Grid MakeHalf(GaugeRow top, GaugeRow bottom, ThermoGauge thermo, bool rightHalf)
         {
             var half = new Grid { Width = 148 };
             half.RowDefinitions.Add(new RowDefinition { Height = new GridLength(18) });
             half.RowDefinitions.Add(new RowDefinition { Height = new GridLength(18) });
             half.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(110) });
             half.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+            thermo.Root.HorizontalAlignment = HorizontalAlignment.Left;
+            thermo.Root.Margin = new Thickness(rightHalf ? 13.5 : 11.75, 0, 0, 0);
 
             Grid.SetRow(top.Root, 0); Grid.SetColumn(top.Root, 0);
             Grid.SetRow(bottom.Root, 1); Grid.SetColumn(bottom.Root, 0);
@@ -736,11 +767,11 @@ namespace SystemWidgetApp
             _gpuThermo = new ThermoGauge("GPU");
             _cpuThermo = new ThermoGauge("CPU");
 
-            var left = MakeHalf(_gpuPower, _vram, _gpuThermo);
+            var left = MakeHalf(_gpuPower, _vram, _gpuThermo, false);
             Grid.SetColumn(left, 0);
             rows.Children.Add(left);
 
-            var right = MakeHalf(_cpu, _ram, _cpuThermo);
+            var right = MakeHalf(_cpu, _ram, _cpuThermo, true);
             Grid.SetColumn(right, 2);
             rows.Children.Add(right);
 
@@ -988,6 +1019,27 @@ namespace SystemWidgetApp
             _root.BorderBrush = BrushFrom(worst >= 90 ? "#CCE05252" : "#22FFFFFF");
         }
 
+        static int SchTasks(string arguments)
+        {
+            try
+            {
+                var start = new ProcessStartInfo
+                {
+                    FileName = "schtasks.exe",
+                    Arguments = arguments,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    WindowStyle = ProcessWindowStyle.Hidden
+                };
+                using (var process = Process.Start(start))
+                {
+                    if (!process.WaitForExit(5000)) { try { process.Kill(); } catch { } return -1; }
+                    return process.ExitCode;
+                }
+            }
+            catch { return -1; }
+        }
+
         // Claude-styled skin for the context menu: dark rounded panel, orange
         // highlight, same palette as the widget. Replaces the gray system look.
         const string MenuSkinXaml = @"
@@ -1160,6 +1212,11 @@ namespace SystemWidgetApp
             }
             menu.Items.Add(languageMenu);
 
+            // Autostart is a scheduled task with highest privileges: the
+            // embedded sensor library needs administrator rights, and the
+            // task grants them at logon without a UAC prompt. The old
+            // Startup-folder shortcut (which started the widget unelevated)
+            // is removed when the option is toggled.
             var autoStart = new MenuItem
             {
                 Header = L.MenuStartWithWindows,
@@ -1168,22 +1225,20 @@ namespace SystemWidgetApp
             string shortcutPath = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.Startup),
                 "System Widget.lnk");
-            autoStart.IsChecked = File.Exists(shortcutPath);
+            autoStart.IsChecked = SchTasks("/Query /TN \"SystemWidget\"") == 0 || File.Exists(shortcutPath);
             autoStart.Click += delegate
             {
                 try
                 {
+                    if (File.Exists(shortcutPath)) File.Delete(shortcutPath);
                     if (autoStart.IsChecked)
                     {
-                        var type = Type.GetTypeFromProgID("WScript.Shell");
-                        dynamic shell = Activator.CreateInstance(type);
-                        dynamic shortcut = shell.CreateShortcut(shortcutPath);
-                        shortcut.TargetPath = System.Reflection.Assembly.GetExecutingAssembly().Location;
-                        shortcut.Save();
+                        string exe = System.Reflection.Assembly.GetExecutingAssembly().Location;
+                        SchTasks("/Create /F /SC ONLOGON /RL HIGHEST /TN \"SystemWidget\" /TR \"\\\"" + exe + "\\\"\"");
                     }
-                    else if (File.Exists(shortcutPath))
+                    else
                     {
-                        File.Delete(shortcutPath);
+                        SchTasks("/Delete /F /TN \"SystemWidget\"");
                     }
                 }
                 catch { }

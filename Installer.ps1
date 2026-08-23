@@ -20,8 +20,13 @@ try {
     $here = Split-Path -Parent $MyInvocation.MyCommand.Path
     $source = Join-Path $here 'SystemWidget.cs'
     $manifest = Join-Path $here 'app.manifest'
+    $sensorLib = Join-Path $here 'lib\LibreHardwareMonitorLib.dll'
+    $hidLib = Join-Path $here 'lib\HidSharp.dll'
     if (-not (Test-Path $source) -or -not (Test-Path $manifest)) {
         Fail 'SystemWidget.cs or app.manifest not found next to this script.'
+    }
+    if (-not (Test-Path $sensorLib) -or -not (Test-Path $hidLib)) {
+        Fail 'lib\LibreHardwareMonitorLib.dll or lib\HidSharp.dll is missing.'
     }
 
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -54,6 +59,7 @@ try {
         /r:System.dll /r:System.Core.dll /r:System.Xaml.dll `
         /r:System.Runtime.Serialization.dll /r:Microsoft.CSharp.dll `
         /r:System.Management.dll `
+        /r:"$here\lib\LibreHardwareMonitorLib.dll" `
         /r:"$wpf\PresentationFramework.dll" /r:"$wpf\PresentationCore.dll" `
         /r:"$wpf\WindowsBase.dll" $source
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path $temporaryExe)) {
@@ -88,9 +94,12 @@ try {
     $destinationDirectory = Join-Path $env:ProgramFiles 'SystemWidget'
     New-Item -ItemType Directory -Path $destinationDirectory -Force | Out-Null
     Copy-Item $temporaryExe (Join-Path $destinationDirectory 'SystemWidget.exe') -Force
+    Copy-Item $sensorLib, $hidLib $destinationDirectory -Force
     Remove-Item $temporaryExe -Force -ErrorAction SilentlyContinue
 
     Write-Host '6/6 Starting...'
+    # Started from this elevated script, the widget gets the administrator
+    # rights the embedded sensor library needs to read the CPU temperature.
     Start-Process (Join-Path $destinationDirectory 'SystemWidget.exe')
     Write-Host "`n[OK] System Widget is installed and running." -ForegroundColor Green
     Write-Host 'Right-click the widget for language, opacity, autostart and quit.'

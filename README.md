@@ -12,10 +12,16 @@ executable is built with the `uiAccess` privilege — the same one the Magnifier
 and the on-screen keyboard use. It re-asserts topmost only when the taskbar
 has actually covered it, instead of twice a second — no flicker.
 
-**Temperatures**: the GPU row shows the NVIDIA core temperature (via
-`nvidia-smi`), the CPU row shows the ACPI thermal-zone temperature when the
-machine exposes one — many boards only report it to administrators, in which
-case the cell stays blank rather than showing a made-up number.
+**Temperatures**: the GPU thermometer shows the NVIDIA core temperature (via
+`nvidia-smi`). The CPU thermometer reads the CPU's own sensor ("CPU Package")
+through the embedded [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor)
+library (MIT) — the engine behind most sensor tools. That read needs
+administrator rights: the installer starts the widget elevated, and the
+*Start with Windows* option registers a scheduled task with highest
+privileges, so no UAC prompt appears at logon. Without those rights the
+thermometer stays blank rather than showing a made-up number. This is the
+project's one shipped binary (`lib/LibreHardwareMonitorLib.dll`, with its
+`HidSharp.dll` dependency, both MIT) — everything else builds from source.
 
 ## Install
 

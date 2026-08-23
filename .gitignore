@@ -15,3 +15,7 @@ log.txt
 config.json
 tokens.json
 *.credentials.json
+
+# The embedded sensor library (MIT) is the one shipped binary
+!lib/LibreHardwareMonitorLib.dll
+!lib/HidSharp.dll
