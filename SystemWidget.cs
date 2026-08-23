@@ -50,6 +50,7 @@ namespace SystemWidgetApp
         public string TipNoGpu;
         public string TipCpu;
         public string TipSystemMemory;  // {0} = amount
+        public string TipTemperature;   // {0} = degrees Celsius
 
         public string UnitGigabyte, UnitMegabyte;
     }
@@ -85,6 +86,7 @@ namespace SystemWidgetApp
                 TipNoGpu = "nvidia-smi not found, or no NVIDIA card detected.",
                 TipCpu = "Total processor usage",
                 TipSystemMemory = "System memory: {0}",
+                TipTemperature = "Temperature: {0:0} °C",
                 UnitGigabyte = "GB", UnitMegabyte = "MB"
             };
         }
@@ -107,6 +109,7 @@ namespace SystemWidgetApp
                 TipNoGpu = "nvidia-smi introuvable, ou aucune carte NVIDIA détectée.",
                 TipCpu = "Utilisation totale du processeur",
                 TipSystemMemory = "Mémoire vive : {0}",
+                TipTemperature = "Température : {0:0} °C",
                 UnitGigabyte = "Go", UnitMegabyte = "Mo"
             };
         }
@@ -129,6 +132,7 @@ namespace SystemWidgetApp
                 TipNoGpu = "No se encuentra nvidia-smi, o no se ha detectado ninguna tarjeta NVIDIA.",
                 TipCpu = "Uso total del procesador",
                 TipSystemMemory = "Memoria del sistema: {0}",
+                TipTemperature = "Temperatura: {0:0} °C",
                 UnitGigabyte = "GB", UnitMegabyte = "MB"
             };
         }
@@ -151,6 +155,7 @@ namespace SystemWidgetApp
                 TipNoGpu = "nvidia-smi nicht gefunden oder keine NVIDIA-Karte erkannt.",
                 TipCpu = "Gesamte Prozessorauslastung",
                 TipSystemMemory = "Arbeitsspeicher: {0}",
+                TipTemperature = "Temperatur: {0:0} °C",
                 UnitGigabyte = "GB", UnitMegabyte = "MB"
             };
         }
@@ -194,6 +199,8 @@ namespace SystemWidgetApp
         public ulong RamUsedMb;
         public ulong RamTotalMb;
         public bool GpuAvailable;
+        public double GpuTempC = -1;    // -1 = not available
+        public double CpuTempC = -1;
     }
 
     public static class Metrics
@@ -298,7 +305,7 @@ namespace SystemWidgetApp
                 var start = new ProcessStartInfo
                 {
                     FileName = NvidiaSmiPath(),
-                    Arguments = "--query-gpu=utilization.gpu,memory.used,memory.total,power.draw,power.limit --format=csv,noheader,nounits",
+                    Arguments = "--query-gpu=utilization.gpu,memory.used,memory.total,power.draw,power.limit,temperature.gpu --format=csv,noheader,nounits",
                     UseShellExecute = false,
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
@@ -332,6 +339,10 @@ namespace SystemWidgetApp
                     snapshot.GpuWatts = watts;
                     snapshot.GpuPowerLimit = limit;
                     snapshot.GpuPowerPct = limit <= 0 ? 0 : Clamp(100.0 * watts / limit);
+
+                    double temp;
+                    if (values.Length >= 6 && TryNumber(values[5], out temp))
+                        snapshot.GpuTempC = temp;
                 }
             }
             catch { }
@@ -353,12 +364,38 @@ namespace SystemWidgetApp
             CpuUsage();
         }
 
+        // ACPI thermal zone via WMI: tenths of Kelvin. Many boards expose
+        // nothing (or only to administrators) - one failure disables the
+        // query for good, so the widget never pays the WMI cost for nothing.
+        static bool _cpuTempBroken;
+
+        static void ReadCpuTemperature(Snapshot snapshot)
+        {
+            if (_cpuTempBroken) return;
+            try
+            {
+                double best = -1;
+                using (var searcher = new System.Management.ManagementObjectSearcher(
+                    "root\\wmi", "SELECT CurrentTemperature FROM MSAcpi_ThermalZoneTemperature"))
+                foreach (System.Management.ManagementObject zone in searcher.Get())
+                {
+                    double kelvinTenths = Convert.ToDouble(zone["CurrentTemperature"]);
+                    double celsius = kelvinTenths / 10.0 - 273.15;
+                    if (celsius > best && celsius > 0 && celsius < 120) best = celsius;
+                }
+                if (best < 0) _cpuTempBroken = true;
+                else snapshot.CpuTempC = best;
+            }
+            catch { _cpuTempBroken = true; }
+        }
+
         public static Snapshot Read()
         {
             var snapshot = new Snapshot();
             snapshot.CpuPct = CpuUsage();
             ReadMemory(snapshot);
             ReadGpu(snapshot);
+            ReadCpuTemperature(snapshot);
             return snapshot;
         }
     }
@@ -367,6 +404,7 @@ namespace SystemWidgetApp
     {
         public Grid Root;
         public TextBlock Percent;
+        public TextBlock Temp;
         public Border Fill;
         public Border Track;
         public string Name;
@@ -379,10 +417,11 @@ namespace SystemWidgetApp
         public GaugeRow(string name)
         {
             Name = name;
-            Root = new Grid { Height = 18, Width = 142 };
+            Root = new Grid { Height = 18, Width = 172 };
             Root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(38) });
             Root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(38) });
             Root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(66) });
+            Root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(30) });
 
             var label = new TextBlock
             {
@@ -426,6 +465,23 @@ namespace SystemWidgetApp
             Track.Child = Fill;
             Grid.SetColumn(Track, 2);
             Root.Children.Add(Track);
+
+            Temp = new TextBlock
+            {
+                Text = "",
+                FontSize = 9,
+                Foreground = BrushFrom("#B8BCCB"),
+                TextAlignment = TextAlignment.Right,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            Grid.SetColumn(Temp, 3);
+            Root.Children.Add(Temp);
+        }
+
+        // degrees < 0 means "unknown": the cell goes blank instead of lying
+        public void SetTemp(double degrees)
+        {
+            Temp.Text = degrees < 0 ? "" : (int)Math.Round(degrees) + "°";
         }
 
         static string Blend(
@@ -489,7 +545,11 @@ namespace SystemWidgetApp
         [DllImport("user32.dll")] static extern bool GetMonitorInfo(IntPtr monitor, ref MonitorInfo info);
         [DllImport("user32.dll", CharSet = CharSet.Unicode)]
         static extern int GetClassName(IntPtr handle, StringBuilder buffer, int count);
+        [DllImport("user32.dll")] static extern IntPtr GetWindow(IntPtr handle, uint command);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        static extern IntPtr FindWindow(string className, string title);
         const uint MonitorDefaultToNearest = 2;
+        const uint GetWindowPrevious = 3;
 
         readonly Border _root;
         readonly GaugeRow _gpuPower;
@@ -564,9 +624,9 @@ namespace SystemWidgetApp
             var rows = new Grid();
             rows.RowDefinitions.Add(new RowDefinition { Height = new GridLength(18) });
             rows.RowDefinitions.Add(new RowDefinition { Height = new GridLength(18) });
-            rows.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(142) });
+            rows.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(172) });
             rows.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(11) });
-            rows.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(142) });
+            rows.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(172) });
             _gpuPower = new GaugeRow("GPU W");
             _vram = new GaugeRow("VRAM");
             _cpu = new GaugeRow("CPU");
@@ -658,6 +718,24 @@ namespace SystemWidgetApp
                 && bounds.Right >= info.Monitor.Right && bounds.Bottom >= info.Monitor.Bottom;
         }
 
+        // The widget is above the taskbar exactly when it comes before it in
+        // the z-order: walking upwards from the taskbar must reach our handle.
+        static bool IsAboveTaskbar(IntPtr self)
+        {
+            IntPtr taskbar = FindWindow("Shell_TrayWnd", null);
+            if (taskbar == IntPtr.Zero) return false;
+            IntPtr handle = taskbar;
+            for (int i = 0; i < 512; i++)
+            {
+                handle = GetWindow(handle, GetWindowPrevious);
+                if (handle == IntPtr.Zero) break;
+                if (handle == self) return true;
+            }
+            return false;
+        }
+
+        bool _menuOpen;
+
         void AssertTopMost()
         {
             if (_handle == IntPtr.Zero) return;
@@ -671,6 +749,11 @@ namespace SystemWidgetApp
             // Re-asserting topmost over a full-screen game can kick it out of
             // its display mode or stutter it, so we stop entirely while hidden.
             if (hide) return;
+
+            // The blind NotTopMost/TopMost dance every 500 ms caused a visible
+            // flicker (and fought the context menu). Re-assert only when the
+            // taskbar has actually climbed above us.
+            if (_menuOpen || IsAboveTaskbar(_handle)) return;
 
             SetWindowPos(_handle, NotTopMost, 0, 0, 0, 0, PositionFlags);
             SetWindowPos(_handle, TopMost, 0, 0, 0, 0, PositionFlags);
@@ -754,13 +837,17 @@ namespace SystemWidgetApp
             {
                 _gpuPower.Set(snapshot.GpuPowerPct);
                 _vram.Set(snapshot.VramPct);
-                _gpuPower.Root.ToolTip = string.Format(
+                _gpuPower.SetTemp(snapshot.GpuTempC);
+                string gpuTip = string.Format(
                     CultureInfo.InvariantCulture,
                     L.TipGpuPower,
                     snapshot.GpuWatts,
                     snapshot.GpuPowerLimit,
                     snapshot.GpuPowerPct,
                     snapshot.GpuLoadPct);
+                if (snapshot.GpuTempC >= 0)
+                    gpuTip += "\n" + string.Format(CultureInfo.InvariantCulture, L.TipTemperature, snapshot.GpuTempC);
+                _gpuPower.Root.ToolTip = gpuTip;
                 _vram.Root.ToolTip = string.Format(
                     L.TipVideoMemory, MemoryText(snapshot.VramUsedMb, snapshot.VramTotalMb));
             }
@@ -768,13 +855,18 @@ namespace SystemWidgetApp
             {
                 _gpuPower.Unavailable();
                 _vram.Unavailable();
+                _gpuPower.SetTemp(-1);
                 _gpuPower.Root.ToolTip = L.TipNoGpu;
                 _vram.Root.ToolTip = L.TipNoGpu;
             }
 
             _cpu.Set(snapshot.CpuPct);
             _ram.Set(snapshot.RamPct);
-            _cpu.Root.ToolTip = L.TipCpu;
+            _cpu.SetTemp(snapshot.CpuTempC);
+            string cpuTip = L.TipCpu;
+            if (snapshot.CpuTempC >= 0)
+                cpuTip += "\n" + string.Format(CultureInfo.InvariantCulture, L.TipTemperature, snapshot.CpuTempC);
+            _cpu.Root.ToolTip = cpuTip;
             _ram.Root.ToolTip = string.Format(
                 L.TipSystemMemory, MemoryText(snapshot.RamUsedMb, snapshot.RamTotalMb));
         }
@@ -782,6 +874,9 @@ namespace SystemWidgetApp
         void BuildMenu()
         {
             var menu = new ContextMenu();
+            // AssertTopMost must not fight the open menu's popup for the z-order.
+            menu.Opened += delegate { _menuOpen = true; };
+            menu.Closed += delegate { _menuOpen = false; };
 
             var refresh = new MenuItem { Header = L.MenuRefresh };
             refresh.Click += delegate { RefreshMetrics(); };

@@ -9,7 +9,14 @@ consommation du GPU, la VRAM, le CPU et la RAM.
 
 Elle se place au-dessus de la barre des tâches et ne passe jamais derrière,
 car l'exécutable est compilé avec le privilège `uiAccess` — le même que la
-Loupe ou le clavier visuel.
+Loupe ou le clavier visuel. Elle ne se replace au-dessus que si la barre des
+tâches l'a réellement recouverte, au lieu de deux fois par seconde — fini le
+clignotement.
+
+**Températures** : la ligne GPU affiche la température du cœur NVIDIA (via
+`nvidia-smi`), la ligne CPU celle de la zone thermique ACPI quand la machine
+l'expose — beaucoup de cartes mères ne la donnent qu'aux administrateurs ;
+dans ce cas la case reste vide plutôt que d'inventer un chiffre.
 
 ## Installation
 

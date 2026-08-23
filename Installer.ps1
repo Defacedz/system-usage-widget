@@ -53,6 +53,7 @@ try {
     & $compiler /nologo /target:winexe /out:$temporaryExe /win32manifest:$manifest /codepage:65001 `
         /r:System.dll /r:System.Core.dll /r:System.Xaml.dll `
         /r:System.Runtime.Serialization.dll /r:Microsoft.CSharp.dll `
+        /r:System.Management.dll `
         /r:"$wpf\PresentationFramework.dll" /r:"$wpf\PresentationCore.dll" `
         /r:"$wpf\WindowsBase.dll" $source
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path $temporaryExe)) {

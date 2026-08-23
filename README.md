@@ -9,7 +9,13 @@ RAM at a glance.
 
 It sits above the taskbar and never disappears behind it, because the
 executable is built with the `uiAccess` privilege — the same one the Magnifier
-and the on-screen keyboard use.
+and the on-screen keyboard use. It re-asserts topmost only when the taskbar
+has actually covered it, instead of twice a second — no flicker.
+
+**Temperatures**: the GPU row shows the NVIDIA core temperature (via
+`nvidia-smi`), the CPU row shows the ACPI thermal-zone temperature when the
+machine exposes one — many boards only report it to administrators, in which
+case the cell stays blank rather than showing a made-up number.
 
 ## Install
 
