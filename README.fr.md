@@ -76,6 +76,10 @@ n'importe quelle commande `| iex` — clonez le dépôt et double-cliquez sur
 - **Deux thèmes** — clic droit → Thème : le *Sombre* d'origine, ou *Ivoire*,
   bâti sur la palette d'Anthropic, pour que le panneau se pose sur une barre
   des tâches claire au lieu d'y faire un trou noir
+- **Mises à jour intégrées** — le widget compare sa version à ce dépôt toutes
+  les 6 heures, et à chaque clic sur *Actualiser* ; quand une nouvelle version
+  est publiée, le contour passe à l'orange Claude et une entrée *Mise à jour
+  disponible* apparaît en tête du clic droit
 
 ## Prérequis
 

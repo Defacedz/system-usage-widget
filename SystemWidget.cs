@@ -9,7 +9,10 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Runtime.Serialization;
 using System.Runtime.Serialization.Json;
+using System.Net;
+using System.Net.Cache;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
@@ -105,6 +108,8 @@ namespace SystemWidgetApp
 
         public string MenuTheme, ThemeDark, ThemeIvory;   // appearance submenu
 
+        public string MenuUpdate;       // shown in orange when the repository is ahead
+
         public string TipGpuPower;      // {0} watts, {1} limit, {2} percent, {3} engine load
         public string TipVideoMemory;   // {0} = amount
         public string TipNoGpu;
@@ -144,6 +149,7 @@ namespace SystemWidgetApp
                 MenuTheme = "Theme", ThemeDark = "Dark", ThemeIvory = "Ivory",
                 MenuRestart = "Restart widget",
                 MenuQuit = "Quit",
+                MenuUpdate = "Update available",
                 TipGpuPower = "GPU power: {0:0.0} W / {1:0.0} W ({2:0}%)\nGPU engine load: {3:0}%",
                 TipVideoMemory = "Video memory: {0}",
                 TipNoGpu = "nvidia-smi not found, or no NVIDIA card detected.",
@@ -170,6 +176,7 @@ namespace SystemWidgetApp
                 MenuTheme = "Thème", ThemeDark = "Sombre", ThemeIvory = "Ivoire",
                 MenuRestart = "Redémarrer le widget",
                 MenuQuit = "Quitter",
+                MenuUpdate = "Mise à jour disponible",
                 TipGpuPower = "Puissance GPU : {0:0.0} W / {1:0.0} W ({2:0} %)\nCharge du moteur GPU : {3:0} %",
                 TipVideoMemory = "Mémoire vidéo : {0}",
                 TipNoGpu = "nvidia-smi introuvable, ou aucune carte NVIDIA détectée.",
@@ -196,6 +203,7 @@ namespace SystemWidgetApp
                 MenuTheme = "Tema", ThemeDark = "Oscuro", ThemeIvory = "Marfil",
                 MenuRestart = "Reiniciar el widget",
                 MenuQuit = "Salir",
+                MenuUpdate = "Actualización disponible",
                 TipGpuPower = "Potencia de la GPU: {0:0.0} W / {1:0.0} W ({2:0} %)\nCarga del motor gráfico: {3:0} %",
                 TipVideoMemory = "Memoria de vídeo: {0}",
                 TipNoGpu = "No se encuentra nvidia-smi, o no se ha detectado ninguna tarjeta NVIDIA.",
@@ -222,6 +230,7 @@ namespace SystemWidgetApp
                 MenuTheme = "Design", ThemeDark = "Dunkel", ThemeIvory = "Elfenbein",
                 MenuRestart = "Widget neu starten",
                 MenuQuit = "Beenden",
+                MenuUpdate = "Update verfügbar",
                 TipGpuPower = "GPU-Leistung: {0:0.0} W / {1:0.0} W ({2:0} %)\nGPU-Auslastung: {3:0} %",
                 TipVideoMemory = "Grafikspeicher: {0}",
                 TipNoGpu = "nvidia-smi nicht gefunden oder keine NVIDIA-Karte erkannt.",
@@ -256,6 +265,61 @@ namespace SystemWidgetApp
                 serializer.WriteObject(stream, value);
                 return Encoding.UTF8.GetString(stream.ToArray());
             }
+        }
+    }
+
+    // ---------- update check ----------
+    // Compares the Version line below with the same line in the repository.
+    // Any failure means "no update": the check must never break the gauges.
+    public static class Updates
+    {
+        // Bump this when publishing.
+        public const string Version = "2026.08.30";
+
+        const string SourceUrl = "https://raw.githubusercontent.com/Defacedz/system-usage-widget/main/SystemWidget.cs";
+        public const string WebInstall = "https://raw.githubusercontent.com/Defacedz/system-usage-widget/main/web-install.ps1";
+
+        // Call from a worker thread.
+        public static bool Available()
+        {
+            try
+            {
+                // raw.githubusercontent.com sits behind a CDN that serves a
+                // copy for a few minutes. A unique query string gives it a
+                // cache key it has never seen, and NoCacheNoStore keeps the
+                // local stack out of the way as well.
+                var request = (HttpWebRequest)WebRequest.Create(
+                    SourceUrl + "?t=" + DateTime.UtcNow.Ticks.ToString(CultureInfo.InvariantCulture));
+                request.Method = "GET";
+                request.Timeout = 20000;
+                request.ReadWriteTimeout = 20000;
+                request.UserAgent = "SystemWidget";
+                request.CachePolicy = new RequestCachePolicy(RequestCacheLevel.NoCacheNoStore);
+                using (var response = (HttpWebResponse)request.GetResponse())
+                using (var reader = new StreamReader(response.GetResponseStream()))
+                {
+                    Match match = Regex.Match(reader.ReadToEnd(), "Version = \"([^\"]+)\"");
+                    if (!match.Success) return false;
+                    // Strictly newer, never merely different: a stale answer
+                    // from the CDN - an older version than the one already
+                    // installed - must not light the border for good.
+                    // Versions are yyyy.MM.dd, so ordinal is chronological.
+                    return string.CompareOrdinal(match.Groups[1].Value, Version) > 0;
+                }
+            }
+            catch { return false; }
+        }
+
+        // web-install.ps1 downloads the repository and runs Installer.ps1
+        // elevated; the installer stops this instance and starts the new one.
+        public static void Start()
+        {
+            try
+            {
+                Process.Start("powershell.exe",
+                    "-NoProfile -ExecutionPolicy Bypass -Command \"irm " + WebInstall + " | iex\"");
+            }
+            catch { }
         }
     }
 
@@ -917,9 +981,7 @@ namespace SystemWidgetApp
             _root.Child = rows;
             Content = _root;
 
-            // Window-level skin: the dark rounded tooltips apply everywhere.
-            try { Resources.MergedDictionaries.Add(MenuSkin()); }
-            catch { }
+            ApplySkinToApp();
 
             BuildMenu();
             Metrics.PrimeCpu();
@@ -947,7 +1009,31 @@ namespace SystemWidgetApp
                 var topTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
                 topTimer.Tick += delegate { AssertTopMost(); };
                 topTimer.Start();
+
+                CheckUpdate();
+                var updateTimer = new DispatcherTimer { Interval = TimeSpan.FromHours(6) };
+                updateTimer.Tick += delegate { CheckUpdate(); };
+                updateTimer.Start();
             };
+        }
+
+        // ---------- update check ----------
+        bool _updateAvailable;
+
+        void CheckUpdate()
+        {
+            ThreadPool.QueueUserWorkItem(delegate
+            {
+                bool available = Updates.Available();
+                Dispatcher.BeginInvoke(new Action(delegate
+                {
+                    if (available == _updateAvailable) return;
+                    _updateAvailable = available;
+                    BuildMenu();        // the Update entry appears or disappears
+                    if (_lastSnapshot != null) Render(_lastSnapshot);
+                    else _root.BorderBrush = BrushFrom(Theme.Current.Border);
+                }));
+            });
         }
 
         // A game running borderless-fullscreen is just a window covering the
@@ -1158,7 +1244,11 @@ namespace SystemWidgetApp
                 Math.Max(snapshot.VramKnown ? snapshot.VramPct : 0, snapshot.RamPct));
             worst = Math.Max(worst, ThermoGauge.AlertPct(snapshot.GpuTempC));
             worst = Math.Max(worst, ThermoGauge.AlertPct(snapshot.CpuTempC));
-            _root.BorderBrush = BrushFrom(worst >= 90 ? "#CCE05252" : Theme.Current.Border);
+            // The red alert outranks the update hint: something running hot
+            // matters more than a version being one behind.
+            _root.BorderBrush = BrushFrom(
+                worst >= 90 ? "#CCE05252"
+                            : (_updateAvailable ? "#CCDA7756" : Theme.Current.Border));
         }
 
         static int SchTasks(string arguments)
@@ -1212,6 +1302,11 @@ namespace SystemWidgetApp
   </Style>
   <Style TargetType='ToolTip'>
     <Setter Property='OverridesDefaultStyle' Value='True'/>
+    <!-- HasDropShadow is what decides whether the tooltip's popup allows
+         transparency. Left to the system setting it can be False, and then
+         the popup paints an opaque white rectangle behind our rounded panel -
+         the white square this style exists to get rid of. -->
+    <Setter Property='HasDropShadow' Value='True'/>
     <Setter Property='Foreground' Value='@INK@'/>
     <Setter Property='FontSize' Value='11'/>
     <Setter Property='Template'>
@@ -1295,7 +1390,26 @@ namespace SystemWidgetApp
             return _menuSkin;
         }
 
-        // Everything the theme touches, repainted in one place. The window-level
+
+        // The skin has to live in the application's resources, not the
+        // window's: a tooltip is hosted in its own popup, and only an
+        // application-level dictionary is certain to reach it.
+        static ResourceDictionary _appliedSkin;
+
+        static void ApplySkinToApp()
+        {
+            Application app = Application.Current;
+            if (app == null) return;
+            try
+            {
+                if (_appliedSkin != null) app.Resources.MergedDictionaries.Remove(_appliedSkin);
+                _appliedSkin = MenuSkin();
+                app.Resources.MergedDictionaries.Add(_appliedSkin);
+            }
+            catch { }
+        }
+
+        // Everything the theme touches, repainted in one place. The skin
         // dictionary carries the tooltip style, so it is swapped as well.
         void ApplyTheme()
         {
@@ -1303,8 +1417,7 @@ namespace SystemWidgetApp
             _divider.Background = BrushFrom(Theme.Current.Divider);
             _gpuPower.Retheme(); _vram.Retheme(); _cpu.Retheme(); _ram.Retheme();
             _gpuThermo.Retheme(); _cpuThermo.Retheme();
-            Resources.MergedDictionaries.Clear();
-            try { Resources.MergedDictionaries.Add(MenuSkin()); } catch { }
+            ApplySkinToApp();
             BuildMenu();
             if (_lastSnapshot != null) Render(_lastSnapshot);
             else _root.BorderBrush = BrushFrom(Theme.Current.Border);
@@ -1319,8 +1432,24 @@ namespace SystemWidgetApp
             menu.Opened += delegate { _menuOpen = true; };
             menu.Closed += delegate { _menuOpen = false; };
 
+            if (_updateAvailable)
+            {
+                var update = new MenuItem
+                {
+                    Header = L.MenuUpdate,
+                    FontWeight = FontWeights.SemiBold,
+                    Foreground = BrushFrom("#DA7756")
+                };
+                update.Click += delegate { Updates.Start(); };
+                menu.Items.Add(update);
+                menu.Items.Add(new Separator());
+            }
+
+            // Refresh rereads the sensors and, in the same click, asks the
+            // repository whether a newer version is out - otherwise the update
+            // entry only appears on the six-hourly timer.
             var refresh = new MenuItem { Header = L.MenuRefresh };
-            refresh.Click += delegate { RefreshMetrics(); };
+            refresh.Click += delegate { RefreshMetrics(); CheckUpdate(); };
             menu.Items.Add(refresh);
 
             var resetPosition = new MenuItem { Header = L.MenuMoveBottomLeft };
@@ -1492,6 +1621,8 @@ namespace SystemWidgetApp
                 catch { }
             }
 
+            // .NET Framework defaults to protocols GitHub no longer accepts.
+            ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
             var app = new Application();
             app.Run(new MainWindow());
         }

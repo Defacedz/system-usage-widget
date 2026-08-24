@@ -71,6 +71,10 @@ habit with any `| iex` command — clone the repository and double-click
 - **Two themes** — right-click → Theme: the original *Dark*, or *Ivory*,
   built on Anthropic's palette so the panel sits on a light Windows taskbar
   instead of punching a black hole in it
+- **Built-in updates** — the widget checks this repository every 6 hours, and
+  on every *Refresh* click; when a newer version is published the border turns
+  Claude-orange and an *Update available* entry appears at the top of the
+  right-click menu
 
 ## Requirements
 
