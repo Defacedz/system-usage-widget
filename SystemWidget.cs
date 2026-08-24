@@ -31,6 +31,63 @@ namespace SystemWidgetApp
         // initializers, so a plain bool absent from an older config file would
         // read back as false - the opposite of the intended default.
         [DataMember] public bool? HideFullScreen;
+        // "dark" (the original) or "ivory". A string rather than an enum for
+        // the same reason: a config file written by an older build has no
+        // value at all, and Theme.Use() maps anything unknown back to dark.
+        [DataMember] public string Theme;
+    }
+
+    // ---------- themes ----------
+    // Two skins for the same widget. Dark is the original; Ivory is built on
+    // Anthropic's palette - Ivory Medium #F0EEE6 is the claude.ai background -
+    // so the panel sits on a light Windows taskbar instead of punching a black
+    // hole in it. The gauge gradient (green to amber to red) is identical in
+    // both skins: it carries meaning, not decoration.
+    public class Theme
+    {
+        public string Name;
+
+        public string Panel;        // widget and menu background
+        public string Border;       // widget border at rest
+        public string MenuBorder;
+        public string Divider;      // the vertical rule between the two halves
+        public string Ink;          // menu and tooltip text
+        public string Label;        // "GPU" / "VRAM" row labels
+        public string Dim;          // thermometer tag, unavailable readings
+        public string Mid;          // submenu arrow
+        public string Bright;       // temperature figure
+        public string Track;        // empty part of a gauge or a thermometer
+        public string Sep;          // menu separator
+        public string Highlight;    // hovered menu row
+
+        public static readonly Theme Dark = new Theme
+        {
+            Name = "dark",
+            Panel = "#F21E2029", Border = "#22FFFFFF", MenuBorder = "#33FFFFFF",
+            Divider = "#20FFFFFF", Ink = "#E8EAF2", Label = "#8B91A7",
+            Dim = "#6C7086", Mid = "#9BA0B5", Bright = "#B8BCCB",
+            Track = "#303442", Sep = "#26FFFFFF", Highlight = "#2EDA7756"
+        };
+
+        public static readonly Theme Ivory = new Theme
+        {
+            Name = "ivory",
+            Panel = "#F2F0EEE6", Border = "#33191919", MenuBorder = "#33191919",
+            Divider = "#1F191919", Ink = "#191919", Label = "#6B6A64",
+            Dim = "#91918D", Mid = "#6B6A64", Bright = "#40403E",
+            Track = "#E3DACC", Sep = "#26191919", Highlight = "#30DA7756"
+        };
+
+        public static readonly Theme[] All = { Dark, Ivory };
+        public static Theme Current = Dark;
+
+        // Unknown or missing name falls back to the original dark skin.
+        public static void Use(string name)
+        {
+            foreach (Theme t in All)
+                if (t.Name == name) { Current = t; return; }
+            Current = Dark;
+        }
     }
 
     // ---------- localization ----------
@@ -46,9 +103,13 @@ namespace SystemWidgetApp
                       MenuStartWithWindows, MenuHideFullScreen, MenuLanguage,
                       MenuRestart, MenuQuit;
 
+        public string MenuTheme, ThemeDark, ThemeIvory;   // appearance submenu
+
         public string TipGpuPower;      // {0} watts, {1} limit, {2} percent, {3} engine load
         public string TipVideoMemory;   // {0} = amount
         public string TipNoGpu;
+        public string TipGpuLoadOnly;   // {0} engine load, when power is not reported
+        public string TipNoVram;
         public string TipCpu;
         public string TipSystemMemory;  // {0} = amount
         public string TipTemperature;   // {0} = degrees Celsius
@@ -80,11 +141,14 @@ namespace SystemWidgetApp
                 MenuStartWithWindows = "Start with Windows",
                 MenuHideFullScreen = "Hide in full-screen apps",
                 MenuLanguage = "Language",
+                MenuTheme = "Theme", ThemeDark = "Dark", ThemeIvory = "Ivory",
                 MenuRestart = "Restart widget",
                 MenuQuit = "Quit",
                 TipGpuPower = "GPU power: {0:0.0} W / {1:0.0} W ({2:0}%)\nGPU engine load: {3:0}%",
                 TipVideoMemory = "Video memory: {0}",
                 TipNoGpu = "nvidia-smi not found, or no NVIDIA card detected.",
+                TipGpuLoadOnly = "GPU engine load: {0:0}%\nThis GPU does not report its power draw.",
+                TipNoVram = "This GPU does not report its video memory.",
                 TipCpu = "Total processor usage",
                 TipSystemMemory = "System memory: {0}",
                 TipTemperature = "Temperature: {0:0} °C",
@@ -103,11 +167,14 @@ namespace SystemWidgetApp
                 MenuStartWithWindows = "Lancer au démarrage de Windows",
                 MenuHideFullScreen = "Masquer en plein écran",
                 MenuLanguage = "Langue",
+                MenuTheme = "Thème", ThemeDark = "Sombre", ThemeIvory = "Ivoire",
                 MenuRestart = "Redémarrer le widget",
                 MenuQuit = "Quitter",
                 TipGpuPower = "Puissance GPU : {0:0.0} W / {1:0.0} W ({2:0} %)\nCharge du moteur GPU : {3:0} %",
                 TipVideoMemory = "Mémoire vidéo : {0}",
                 TipNoGpu = "nvidia-smi introuvable, ou aucune carte NVIDIA détectée.",
+                TipGpuLoadOnly = "Charge du moteur GPU : {0:0} %\nCette carte ne rapporte pas sa consommation électrique.",
+                TipNoVram = "Cette carte ne rapporte pas sa mémoire vidéo.",
                 TipCpu = "Utilisation totale du processeur",
                 TipSystemMemory = "Mémoire vive : {0}",
                 TipTemperature = "Température : {0:0} °C",
@@ -126,11 +193,14 @@ namespace SystemWidgetApp
                 MenuStartWithWindows = "Iniciar con Windows",
                 MenuHideFullScreen = "Ocultar en pantalla completa",
                 MenuLanguage = "Idioma",
+                MenuTheme = "Tema", ThemeDark = "Oscuro", ThemeIvory = "Marfil",
                 MenuRestart = "Reiniciar el widget",
                 MenuQuit = "Salir",
                 TipGpuPower = "Potencia de la GPU: {0:0.0} W / {1:0.0} W ({2:0} %)\nCarga del motor gráfico: {3:0} %",
                 TipVideoMemory = "Memoria de vídeo: {0}",
                 TipNoGpu = "No se encuentra nvidia-smi, o no se ha detectado ninguna tarjeta NVIDIA.",
+                TipGpuLoadOnly = "Carga del motor gráfico: {0:0} %\nEsta tarjeta no informa de su consumo eléctrico.",
+                TipNoVram = "Esta tarjeta no informa de su memoria de vídeo.",
                 TipCpu = "Uso total del procesador",
                 TipSystemMemory = "Memoria del sistema: {0}",
                 TipTemperature = "Temperatura: {0:0} °C",
@@ -149,11 +219,14 @@ namespace SystemWidgetApp
                 MenuStartWithWindows = "Mit Windows starten",
                 MenuHideFullScreen = "Bei Vollbild ausblenden",
                 MenuLanguage = "Sprache",
+                MenuTheme = "Design", ThemeDark = "Dunkel", ThemeIvory = "Elfenbein",
                 MenuRestart = "Widget neu starten",
                 MenuQuit = "Beenden",
                 TipGpuPower = "GPU-Leistung: {0:0.0} W / {1:0.0} W ({2:0} %)\nGPU-Auslastung: {3:0} %",
                 TipVideoMemory = "Grafikspeicher: {0}",
                 TipNoGpu = "nvidia-smi nicht gefunden oder keine NVIDIA-Karte erkannt.",
+                TipGpuLoadOnly = "GPU-Auslastung: {0:0} %\nDiese Karte meldet ihre Leistungsaufnahme nicht.",
+                TipNoVram = "Diese Karte meldet ihren Videospeicher nicht.",
                 TipCpu = "Gesamte Prozessorauslastung",
                 TipSystemMemory = "Arbeitsspeicher: {0}",
                 TipTemperature = "Temperatur: {0:0} °C",
@@ -200,6 +273,12 @@ namespace SystemWidgetApp
         public ulong RamUsedMb;
         public ulong RamTotalMb;
         public bool GpuAvailable;
+        // A GPU can answer for some fields and not others - laptop cards very
+        // often report power.draw as [N/A] - so each block says whether it is
+        // worth reading. GpuDiag carries the reason when nothing came back.
+        public bool GpuPowerKnown;
+        public bool VramKnown;
+        public string GpuDiag;
         public double GpuTempC = -1;    // -1 = not available
         public double CpuTempC = -1;
     }
@@ -301,6 +380,7 @@ namespace SystemWidgetApp
 
         static void ReadGpu(Snapshot snapshot)
         {
+            string raw = null;
             try
             {
                 var start = new ProcessStartInfo
@@ -315,38 +395,66 @@ namespace SystemWidgetApp
                 };
                 using (var process = Process.Start(start))
                 {
-                    string line = process.StandardOutput.ReadLine();
+                    raw = process.StandardOutput.ReadLine();
                     if (!process.WaitForExit(3000))
                     {
                         try { process.Kill(); } catch { }
+                        snapshot.GpuDiag = "nvidia-smi did not answer within 3 s";
                         return;
                     }
-                    if (string.IsNullOrWhiteSpace(line)) return;
-                    string[] values = line.Split(',');
-                    if (values.Length < 5) return;
-
-                    double load, used, total, watts, limit;
-                    if (!TryNumber(values[0], out load) ||
-                        !TryNumber(values[1], out used) ||
-                        !TryNumber(values[2], out total) ||
-                        !TryNumber(values[3], out watts) ||
-                        !TryNumber(values[4], out limit)) return;
-
-                    snapshot.GpuAvailable = true;
-                    snapshot.GpuLoadPct = Clamp(load);
-                    snapshot.VramUsedMb = used;
-                    snapshot.VramTotalMb = total;
-                    snapshot.VramPct = total <= 0 ? 0 : Clamp(100.0 * used / total);
-                    snapshot.GpuWatts = watts;
-                    snapshot.GpuPowerLimit = limit;
-                    snapshot.GpuPowerPct = limit <= 0 ? 0 : Clamp(100.0 * watts / limit);
-
-                    double temp;
-                    if (values.Length >= 6 && TryNumber(values[5], out temp))
-                        snapshot.GpuTempC = temp;
                 }
             }
-            catch { }
+            catch (Exception e)
+            {
+                snapshot.GpuDiag = "nvidia-smi: " + e.Message;
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                snapshot.GpuDiag = "nvidia-smi answered nothing";
+                return;
+            }
+            string[] values = raw.Split(',');
+
+            // Every field is read on its own. Laptop cards in particular report
+            // power.draw and power.limit as [N/A], and refusing the whole line
+            // over them used to leave the panel empty on machines where load,
+            // memory and temperature were all perfectly readable.
+            double load = 0, used = 0, total = 0, watts = 0, limit = 0, temp = -1;
+            bool haveLoad = values.Length >= 1 && TryNumber(values[0], out load);
+            bool haveUsed = values.Length >= 2 && TryNumber(values[1], out used);
+            bool haveTotal = values.Length >= 3 && TryNumber(values[2], out total);
+            bool haveWatts = values.Length >= 4 && TryNumber(values[3], out watts);
+            bool haveLimit = values.Length >= 5 && TryNumber(values[4], out limit);
+            bool haveTemp = values.Length >= 6 && TryNumber(values[5], out temp);
+
+            if (!haveLoad && !(haveUsed && haveTotal))
+            {
+                snapshot.GpuDiag = "nothing readable in: " + raw.Trim();
+                return;
+            }
+
+            snapshot.GpuAvailable = true;
+            snapshot.GpuLoadPct = haveLoad ? Clamp(load) : 0;
+
+            snapshot.VramKnown = haveUsed && haveTotal && total > 0;
+            if (snapshot.VramKnown)
+            {
+                snapshot.VramUsedMb = used;
+                snapshot.VramTotalMb = total;
+                snapshot.VramPct = Clamp(100.0 * used / total);
+            }
+
+            snapshot.GpuPowerKnown = haveWatts && haveLimit && limit > 0;
+            if (snapshot.GpuPowerKnown)
+            {
+                snapshot.GpuWatts = watts;
+                snapshot.GpuPowerLimit = limit;
+                snapshot.GpuPowerPct = Clamp(100.0 * watts / limit);
+            }
+
+            if (haveTemp) snapshot.GpuTempC = temp;
         }
 
         static bool TryNumber(string value, out double result)
@@ -432,6 +540,7 @@ namespace SystemWidgetApp
         public Border Fill;
         public Border Track;
         public string Name;
+        TextBlock _label;
 
         static Brush BrushFrom(string hex)
         {
@@ -447,17 +556,17 @@ namespace SystemWidgetApp
             Root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(48) });
 
             // Centred so GPU/VRAM (and CPU/RAM) share the same axis.
-            var label = new TextBlock
+            _label = new TextBlock
             {
                 Text = name,
                 FontSize = 8,
                 FontWeight = FontWeights.SemiBold,
-                Foreground = BrushFrom("#8B91A7"),
+                Foreground = BrushFrom(Theme.Current.Label),
                 TextAlignment = TextAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center
             };
-            Grid.SetColumn(label, 0);
-            Root.Children.Add(label);
+            Grid.SetColumn(_label, 0);
+            Root.Children.Add(_label);
 
             Percent = new TextBlock
             {
@@ -477,7 +586,7 @@ namespace SystemWidgetApp
                 Width = 48,
                 Height = 4,
                 CornerRadius = new CornerRadius(2),
-                Background = BrushFrom("#303442"),
+                Background = BrushFrom(Theme.Current.Track),
                 HorizontalAlignment = HorizontalAlignment.Left,
                 VerticalAlignment = VerticalAlignment.Center
             };
@@ -530,8 +639,17 @@ namespace SystemWidgetApp
         public void Unavailable()
         {
             Percent.Text = "--";
-            Percent.Foreground = BrushFrom("#6C7086");
+            Percent.Foreground = BrushFrom(Theme.Current.Dim);
             Fill.Width = 0;
+        }
+
+        // Repaints the parts that carry the skin. The gauge gradient is not
+        // one of them: green, amber and red mean the same in both themes.
+        public void Retheme()
+        {
+            _label.Foreground = BrushFrom(Theme.Current.Label);
+            Track.Background = BrushFrom(Theme.Current.Track);
+            if (Percent.Text == "--") Percent.Foreground = BrushFrom(Theme.Current.Dim);
         }
     }
 
@@ -543,7 +661,8 @@ namespace SystemWidgetApp
     {
         public Canvas Root;
         TextBlock _tag, _value;
-        Border _tubeFill;
+        Border _tubeFill, _tubeTrack;
+        System.Windows.Shapes.Ellipse _bulbBack;
         System.Windows.Shapes.Ellipse _bulbFill;
 
         static Brush BrushFrom(string hex)
@@ -560,27 +679,27 @@ namespace SystemWidgetApp
             _tag = new TextBlock
             {
                 Text = tag, FontSize = 6.5, FontWeight = FontWeights.SemiBold,
-                Foreground = BrushFrom("#6C7086"), Width = 20, TextAlignment = TextAlignment.Center
+                Foreground = BrushFrom(Theme.Current.Dim), Width = 20, TextAlignment = TextAlignment.Center
             };
             Canvas.SetLeft(_tag, 0); Canvas.SetTop(_tag, 0);
             Root.Children.Add(_tag);
 
-            var tubeTrack = new Border
+            _tubeTrack = new Border
             {
                 Width = 4, Height = TubeH, CornerRadius = new CornerRadius(2),
-                Background = BrushFrom("#303442")
+                Background = BrushFrom(Theme.Current.Track)
             };
-            Canvas.SetLeft(tubeTrack, 8); Canvas.SetTop(tubeTrack, TubeTop);
-            Root.Children.Add(tubeTrack);
+            Canvas.SetLeft(_tubeTrack, 8); Canvas.SetTop(_tubeTrack, TubeTop);
+            Root.Children.Add(_tubeTrack);
 
             // The bulb overlaps the tube and its fill is the same size as its
             // track: no ring, no seam - one continuous thermometer.
-            var bulbBack = new System.Windows.Shapes.Ellipse
+            _bulbBack = new System.Windows.Shapes.Ellipse
             {
-                Width = 6, Height = 6, Fill = BrushFrom("#303442")
+                Width = 6, Height = 6, Fill = BrushFrom(Theme.Current.Track)
             };
-            Canvas.SetLeft(bulbBack, 7); Canvas.SetTop(bulbBack, TubeTop + TubeH - 2);
-            Root.Children.Add(bulbBack);
+            Canvas.SetLeft(_bulbBack, 7); Canvas.SetTop(_bulbBack, TubeTop + TubeH - 2);
+            Root.Children.Add(_bulbBack);
 
             _tubeFill = new Border
             {
@@ -599,7 +718,7 @@ namespace SystemWidgetApp
 
             _value = new TextBlock
             {
-                Text = "", FontSize = 8.5, Foreground = BrushFrom("#B8BCCB"),
+                Text = "", FontSize = 8.5, Foreground = BrushFrom(Theme.Current.Bright),
                 Width = 20, TextAlignment = TextAlignment.Center
             };
             Canvas.SetLeft(_value, 0); Canvas.SetTop(_value, 26.5);
@@ -625,6 +744,14 @@ namespace SystemWidgetApp
             _tubeFill.Background = BrushFrom(color);
             _bulbFill.Fill = BrushFrom(color);
             _value.Text = (int)Math.Round(degrees) + "°";
+        }
+
+        public void Retheme()
+        {
+            _tag.Foreground = BrushFrom(Theme.Current.Dim);
+            _tubeTrack.Background = BrushFrom(Theme.Current.Track);
+            _bulbBack.Fill = BrushFrom(Theme.Current.Track);
+            _value.Foreground = BrushFrom(Theme.Current.Bright);
         }
 
         // Feeds the red-border alert: how hot on the 0-100 gauge scale.
@@ -661,6 +788,7 @@ namespace SystemWidgetApp
         const uint GetWindowPrevious = 3;
 
         readonly Border _root;
+        Border _divider;
         readonly GaugeRow _gpuPower;
         readonly GaugeRow _vram;
         readonly GaugeRow _cpu;
@@ -745,13 +873,15 @@ namespace SystemWidgetApp
             // maps null to English, and we write the resolved code back.
             I18n.Use(_config.Lang);
             _config.Lang = L.Code;
+            Theme.Use(_config.Theme);
+            _config.Theme = Theme.Current.Name;
             Opacity = (_config.Opacity >= 0.2 && _config.Opacity <= 1.0) ? _config.Opacity : 1.0;
 
             _root = new Border
             {
                 CornerRadius = new CornerRadius(7),
-                Background = BrushFrom("#F21E2029"),
-                BorderBrush = BrushFrom("#22FFFFFF"),
+                Background = BrushFrom(Theme.Current.Panel),
+                BorderBrush = BrushFrom(Theme.Current.Border),
                 BorderThickness = new Thickness(1),
                 Padding = new Thickness(8, 3, 8, 3)
             };
@@ -775,15 +905,15 @@ namespace SystemWidgetApp
             Grid.SetColumn(right, 2);
             rows.Children.Add(right);
 
-            var separator = new Border
+            _divider = new Border
             {
                 Width = 1,
-                Background = BrushFrom("#20FFFFFF"),
+                Background = BrushFrom(Theme.Current.Divider),
                 HorizontalAlignment = HorizontalAlignment.Center,
                 Margin = new Thickness(0, 2, 0, 2)
             };
-            Grid.SetColumn(separator, 1);
-            rows.Children.Add(separator);
+            Grid.SetColumn(_divider, 1);
+            rows.Children.Add(_divider);
             _root.Child = rows;
             Content = _root;
 
@@ -966,16 +1096,21 @@ namespace SystemWidgetApp
 
             if (snapshot.GpuAvailable)
             {
-                _gpuPower.Set(snapshot.GpuPowerPct);
-                _vram.Set(snapshot.VramPct);
+                // A card that does not report its power draw still reports how
+                // busy it is, so the gauge shows the engine load rather than an
+                // empty bar - and the tooltip says which of the two it is.
+                _gpuPower.Set(snapshot.GpuPowerKnown ? snapshot.GpuPowerPct : snapshot.GpuLoadPct);
+                if (snapshot.VramKnown) _vram.Set(snapshot.VramPct); else _vram.Unavailable();
                 _gpuThermo.Set(snapshot.GpuTempC);
-                string gpuTip = string.Format(
-                    CultureInfo.InvariantCulture,
-                    L.TipGpuPower,
-                    snapshot.GpuWatts,
-                    snapshot.GpuPowerLimit,
-                    snapshot.GpuPowerPct,
-                    snapshot.GpuLoadPct);
+                string gpuTip = snapshot.GpuPowerKnown
+                    ? string.Format(
+                        CultureInfo.InvariantCulture,
+                        L.TipGpuPower,
+                        snapshot.GpuWatts,
+                        snapshot.GpuPowerLimit,
+                        snapshot.GpuPowerPct,
+                        snapshot.GpuLoadPct)
+                    : string.Format(CultureInfo.InvariantCulture, L.TipGpuLoadOnly, snapshot.GpuLoadPct);
                 if (snapshot.GpuTempC >= 0)
                 {
                     string tempTip = string.Format(CultureInfo.InvariantCulture, L.TipTemperature, snapshot.GpuTempC);
@@ -983,16 +1118,21 @@ namespace SystemWidgetApp
                     _gpuThermo.Root.ToolTip = tempTip;
                 }
                 _gpuPower.Root.ToolTip = gpuTip;
-                _vram.Root.ToolTip = string.Format(
-                    L.TipVideoMemory, MemoryText(snapshot.VramUsedMb, snapshot.VramTotalMb));
+                _vram.Root.ToolTip = snapshot.VramKnown
+                    ? string.Format(L.TipVideoMemory, MemoryText(snapshot.VramUsedMb, snapshot.VramTotalMb))
+                    : L.TipNoVram;
             }
             else
             {
                 _gpuPower.Unavailable();
                 _vram.Unavailable();
                 _gpuThermo.Set(-1);
-                _gpuPower.Root.ToolTip = L.TipNoGpu;
-                _vram.Root.ToolTip = L.TipNoGpu;
+                // The reason goes in the tooltip: with no log file, that is
+                // where someone can see what nvidia-smi actually said.
+                string noGpu = L.TipNoGpu;
+                if (!string.IsNullOrEmpty(snapshot.GpuDiag)) noGpu += "\n" + snapshot.GpuDiag;
+                _gpuPower.Root.ToolTip = noGpu;
+                _vram.Root.ToolTip = noGpu;
             }
 
             _cpu.Set(snapshot.CpuPct);
@@ -1011,12 +1151,14 @@ namespace SystemWidgetApp
 
             // Red frame when anything enters the red zone (>= 90 on the
             // gauge scale; for temperatures that is about 83 degrees).
+            double gpuGauge = !snapshot.GpuAvailable ? 0
+                : (snapshot.GpuPowerKnown ? snapshot.GpuPowerPct : snapshot.GpuLoadPct);
             double worst = Math.Max(
-                Math.Max(snapshot.GpuAvailable ? snapshot.GpuPowerPct : 0, snapshot.CpuPct),
-                Math.Max(snapshot.GpuAvailable ? snapshot.VramPct : 0, snapshot.RamPct));
+                Math.Max(gpuGauge, snapshot.CpuPct),
+                Math.Max(snapshot.VramKnown ? snapshot.VramPct : 0, snapshot.RamPct));
             worst = Math.Max(worst, ThermoGauge.AlertPct(snapshot.GpuTempC));
             worst = Math.Max(worst, ThermoGauge.AlertPct(snapshot.CpuTempC));
-            _root.BorderBrush = BrushFrom(worst >= 90 ? "#CCE05252" : "#22FFFFFF");
+            _root.BorderBrush = BrushFrom(worst >= 90 ? "#CCE05252" : Theme.Current.Border);
         }
 
         static int SchTasks(string arguments)
@@ -1050,7 +1192,7 @@ namespace SystemWidgetApp
     <Setter Property='Template'>
       <Setter.Value>
         <ControlTemplate TargetType='ContextMenu'>
-          <Border Background='#F21E2029' BorderBrush='#33FFFFFF' BorderThickness='1'
+          <Border Background='@PANEL@' BorderBrush='@MENUBORDER@' BorderThickness='1'
                   CornerRadius='7' Padding='4' MinWidth='170'>
             <ItemsPresenter/>
           </Border>
@@ -1063,19 +1205,19 @@ namespace SystemWidgetApp
     <Setter Property='Template'>
       <Setter.Value>
         <ControlTemplate TargetType='Separator'>
-          <Border Height='1' Background='#26FFFFFF' Margin='6,3'/>
+          <Border Height='1' Background='@SEP@' Margin='6,3'/>
         </ControlTemplate>
       </Setter.Value>
     </Setter>
   </Style>
   <Style TargetType='ToolTip'>
     <Setter Property='OverridesDefaultStyle' Value='True'/>
-    <Setter Property='Foreground' Value='#E8EAF2'/>
+    <Setter Property='Foreground' Value='@INK@'/>
     <Setter Property='FontSize' Value='11'/>
     <Setter Property='Template'>
       <Setter.Value>
         <ControlTemplate TargetType='ToolTip'>
-          <Border Background='#F21E2029' BorderBrush='#33FFFFFF' BorderThickness='1'
+          <Border Background='@PANEL@' BorderBrush='@MENUBORDER@' BorderThickness='1'
                   CornerRadius='6' Padding='9,6'>
             <ContentPresenter/>
           </Border>
@@ -1085,7 +1227,7 @@ namespace SystemWidgetApp
   </Style>
   <Style TargetType='MenuItem'>
     <Setter Property='OverridesDefaultStyle' Value='True'/>
-    <Setter Property='Foreground' Value='#E8EAF2'/>
+    <Setter Property='Foreground' Value='@INK@'/>
     <Setter Property='FontSize' Value='11.5'/>
     <Setter Property='Template'>
       <Setter.Value>
@@ -1101,12 +1243,12 @@ namespace SystemWidgetApp
                          Visibility='Hidden' VerticalAlignment='Center'/>
               <ContentPresenter Grid.Column='1' ContentSource='Header' VerticalAlignment='Center'/>
               <TextBlock x:Name='Arrow' Grid.Column='2' Text='&#x203A;' FontSize='12'
-                         Foreground='#9BA0B5' Visibility='Hidden'
+                         Foreground='@MID@' Visibility='Hidden'
                          VerticalAlignment='Center' HorizontalAlignment='Right'/>
               <Popup x:Name='PART_Popup' Placement='Right' HorizontalOffset='2' VerticalOffset='-6'
                      IsOpen='{Binding IsSubmenuOpen, RelativeSource={RelativeSource TemplatedParent}}'
                      AllowsTransparency='True' Focusable='False'>
-                <Border Background='#F21E2029' BorderBrush='#33FFFFFF' BorderThickness='1'
+                <Border Background='@PANEL@' BorderBrush='@MENUBORDER@' BorderThickness='1'
                         CornerRadius='7' Padding='4' MinWidth='110'>
                   <ItemsPresenter/>
                 </Border>
@@ -1115,7 +1257,7 @@ namespace SystemWidgetApp
           </Border>
           <ControlTemplate.Triggers>
             <Trigger Property='IsHighlighted' Value='True'>
-              <Setter TargetName='Bd' Property='Background' Value='#2EDA7756'/>
+              <Setter TargetName='Bd' Property='Background' Value='@HIGHLIGHT@'/>
             </Trigger>
             <Trigger Property='IsChecked' Value='True'>
               <Setter TargetName='Check' Property='Visibility' Value='Visible'/>
@@ -1124,7 +1266,7 @@ namespace SystemWidgetApp
               <Setter TargetName='Arrow' Property='Visibility' Value='Visible'/>
             </Trigger>
             <Trigger Property='IsEnabled' Value='False'>
-              <Setter Property='Foreground' Value='#6C7086'/>
+              <Setter Property='Foreground' Value='@DIM@'/>
             </Trigger>
           </ControlTemplate.Triggers>
         </ControlTemplate>
@@ -1134,11 +1276,38 @@ namespace SystemWidgetApp
 </ResourceDictionary>";
 
         static ResourceDictionary _menuSkin;
+        static string _menuSkinFor;     // the theme the cached skin was built for
+
         static ResourceDictionary MenuSkin()
         {
-            if (_menuSkin == null)
-                _menuSkin = (ResourceDictionary)XamlReader.Parse(MenuSkinXaml);
+            Theme t = Theme.Current;
+            if (_menuSkin != null && _menuSkinFor == t.Name) return _menuSkin;
+            string xaml = MenuSkinXaml
+                .Replace("@PANEL@", t.Panel)
+                .Replace("@MENUBORDER@", t.MenuBorder)
+                .Replace("@SEP@", t.Sep)
+                .Replace("@INK@", t.Ink)
+                .Replace("@MID@", t.Mid)
+                .Replace("@DIM@", t.Dim)
+                .Replace("@HIGHLIGHT@", t.Highlight);
+            _menuSkin = (ResourceDictionary)XamlReader.Parse(xaml);
+            _menuSkinFor = t.Name;
             return _menuSkin;
+        }
+
+        // Everything the theme touches, repainted in one place. The window-level
+        // dictionary carries the tooltip style, so it is swapped as well.
+        void ApplyTheme()
+        {
+            _root.Background = BrushFrom(Theme.Current.Panel);
+            _divider.Background = BrushFrom(Theme.Current.Divider);
+            _gpuPower.Retheme(); _vram.Retheme(); _cpu.Retheme(); _ram.Retheme();
+            _gpuThermo.Retheme(); _cpuThermo.Retheme();
+            Resources.MergedDictionaries.Clear();
+            try { Resources.MergedDictionaries.Add(MenuSkin()); } catch { }
+            BuildMenu();
+            if (_lastSnapshot != null) Render(_lastSnapshot);
+            else _root.BorderBrush = BrushFrom(Theme.Current.Border);
         }
 
         void BuildMenu()
@@ -1189,6 +1358,27 @@ namespace SystemWidgetApp
                 opacityMenu.Items.Add(item);
             }
             menu.Items.Add(opacityMenu);
+
+            var themeMenu = new MenuItem { Header = L.MenuTheme };
+            foreach (Theme entry in Theme.All)
+            {
+                Theme theme = entry;
+                var item = new MenuItem
+                {
+                    Header = theme == Theme.Dark ? L.ThemeDark : L.ThemeIvory,
+                    IsCheckable = true,
+                    IsChecked = theme == Theme.Current
+                };
+                item.Click += delegate
+                {
+                    Theme.Use(theme.Name);
+                    _config.Theme = theme.Name;
+                    SavePosition();
+                    ApplyTheme();
+                };
+                themeMenu.Items.Add(item);
+            }
+            menu.Items.Add(themeMenu);
 
             var languageMenu = new MenuItem { Header = L.MenuLanguage };
             foreach (Strings entry in I18n.Catalog)

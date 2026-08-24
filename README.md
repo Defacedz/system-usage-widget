@@ -68,6 +68,9 @@ habit with any `| iex` command — clone the repository and double-click
 - Drag to move, position is remembered; adjustable opacity; optional start
   with Windows
 - **English, Français, Español, Deutsch** — right-click → Language
+- **Two themes** — right-click → Theme: the original *Dark*, or *Ivory*,
+  built on Anthropic's palette so the panel sits on a light Windows taskbar
+  instead of punching a black hole in it
 
 ## Requirements
 
@@ -107,7 +110,14 @@ welcome.
 
 **GPU and VRAM show `--`.** `nvidia-smi` was not found or returned nothing.
 The widget looks in `System32` and in `Program Files\NVIDIA Corporation\NVSMI`,
-then falls back to `PATH`. On a non-NVIDIA card this is expected.
+then falls back to `PATH`. On a non-NVIDIA card this is expected. Hover the
+GPU gauge: the tooltip carries the exact reason, including what `nvidia-smi`
+answered.
+
+**The GPU gauge shows a percentage but no wattage in its tooltip.** That
+card does not report `power.draw` — common on laptop GPUs. The gauge falls
+back to the engine load, and the tooltip says so. Every other field is read
+independently, so a missing one never blanks the rest.
 
 **The widget vanished.** A full-screen application is in the foreground; it
 comes back on its own. Untick *Hide in full-screen apps* to keep it visible

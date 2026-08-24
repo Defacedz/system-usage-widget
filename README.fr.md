@@ -73,6 +73,9 @@ n'importe quelle commande `| iex` — clonez le dépôt et double-cliquez sur
 - Glisser pour déplacer, position mémorisée ; opacité réglable ; lancement au
   démarrage de Windows en option
 - **English, Français, Español, Deutsch** — clic droit → Langue
+- **Deux thèmes** — clic droit → Thème : le *Sombre* d'origine, ou *Ivoire*,
+  bâti sur la palette d'Anthropic, pour que le panneau se pose sur une barre
+  des tâches claire au lieu d'y faire un trou noir
 
 ## Prérequis
 
@@ -112,7 +115,15 @@ Le menu des langues et le fichier de configuration sont tous deux pilotés par
 **GPU et VRAM affichent `--`.** `nvidia-smi` est introuvable ou n'a rien
 renvoyé. Le widget le cherche dans `System32` puis dans
 `Program Files\NVIDIA Corporation\NVSMI`, avant de se rabattre sur le `PATH`.
-Sur une carte non NVIDIA, c'est le comportement attendu.
+Sur une carte non NVIDIA, c'est le comportement attendu. Survolez la jauge
+GPU : l'infobulle donne la raison exacte, y compris ce que `nvidia-smi` a
+répondu.
+
+**La jauge GPU affiche un pourcentage mais l'infobulle ne donne aucun
+wattage.** Cette carte ne rapporte pas `power.draw` — c'est courant sur les
+cartes de portable. La jauge se rabat alors sur la charge du moteur
+graphique, et l'infobulle le précise. Chaque champ est lu indépendamment :
+un champ manquant ne vide plus les autres.
 
 **Le widget a disparu.** Une application plein écran est au premier plan ; il
 revient tout seul. Décochez *Masquer en plein écran* pour le garder visible
