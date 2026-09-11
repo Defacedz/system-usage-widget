@@ -52,18 +52,46 @@ try {
     # registered here as the service R0SystemWidget. Remove it on the way in,
     # otherwise updating leaves the hole open on every machine that ran an
     # older build.
+    # Never Stop-Service here: it waits for the service to report STOPPED, and
+    # a kernel driver whose file Defender has already quarantined never does -
+    # the installer then hangs forever printing "waiting for the service".
+    # sc.exe stop asks and returns; sc.exe delete succeeds even on a service
+    # that refuses to stop, in which case Windows finishes the removal at the
+    # next reboot. Either way the driver is gone and cannot be loaded again.
     Write-Host '2/8 Removing the old WinRing0 driver, if present...'
     $legacyService = Get-Service -Name 'R0SystemWidget' -ErrorAction SilentlyContinue
     if ($legacyService) {
-        if ($legacyService.Status -eq 'Running') {
-            Stop-Service -Name 'R0SystemWidget' -Force -ErrorAction SilentlyContinue
-            Start-Sleep -Milliseconds 400
-        }
+        & sc.exe stop 'R0SystemWidget' | Out-Null
+        Start-Sleep -Milliseconds 600
         & sc.exe delete 'R0SystemWidget' | Out-Null
-        Write-Host '      service R0SystemWidget deleted.'
+        $stillThere = Get-Service -Name 'R0SystemWidget' -ErrorAction SilentlyContinue
+        if ($stillThere) {
+            Write-Host '      service R0SystemWidget marked for removal (completes at the next reboot).'
+        }
+        else {
+            Write-Host '      service R0SystemWidget deleted.'
+        }
     }
-    Remove-Item (Join-Path (Join-Path $env:ProgramFiles 'SystemWidget') 'SystemWidget.sys') `
-        -Force -ErrorAction SilentlyContinue
+    # The .sys file stays locked while the service sits in STOP_PENDING, so a
+    # plain delete silently fails and the vulnerable driver survives on disk.
+    # Hand it to Windows instead: MoveFileEx with DELAY_UNTIL_REBOOT queues the
+    # deletion, and the file is gone before anything could load it again.
+    $legacySys = Join-Path (Join-Path $env:ProgramFiles 'SystemWidget') 'SystemWidget.sys'
+    if (Test-Path $legacySys) {
+        Remove-Item $legacySys -Force -ErrorAction SilentlyContinue
+        if (Test-Path $legacySys) {
+            try {
+                Add-Type -Namespace Win32 -Name Files -MemberDefinition @'
+[DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+public static extern bool MoveFileEx(string existing, string newName, int flags);
+'@ -ErrorAction Stop
+                # 4 = MOVEFILE_DELAY_UNTIL_REBOOT, a null target means delete
+                if ([Win32.Files]::MoveFileEx($legacySys, $null, 4)) {
+                    Write-Host '      SystemWidget.sys will be deleted at the next reboot.'
+                }
+            } catch { }
+        }
+    }
 
     Write-Host '3/8 Building...'
     $framework = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319'
