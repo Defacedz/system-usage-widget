@@ -30,22 +30,33 @@ dépendances d'exécution, MIT) — tout le reste se compile depuis les sources.
 
 ## Installation
 
-Collez ceci dans **PowerShell** et acceptez la demande d'élévation :
+1. [**Téléchargez le dépôt en ZIP**](https://github.com/Defacedz/system-usage-widget/archive/refs/heads/main.zip)
+   (ou *Code → Download ZIP* en haut de cette page)
+2. Décompressez-le où vous voulez
+3. Double-cliquez sur **`Installer.bat`** et acceptez la demande d'élévation
+
+Trois clics, rien à taper, et vous pouvez lire chaque ligne avant de l'exécuter —
+le bon réflexe pour un programme qui installe un pilote.
+
+Les mises à jour suivantes tiennent en un clic : le widget surveille ce dépôt,
+son contour passe à l'orange quand une version plus récente existe, et
+*Mise à jour disponible* dans le menu clic droit la télécharge et l'installe.
+
+<details>
+<summary>Installation en une ligne (généralement bloquée par Defender)</summary>
 
 ```powershell
 irm https://raw.githubusercontent.com/Defacedz/system-usage-widget/main/web-install.ps1 | iex
 ```
 
-Ou depuis **cmd.exe** :
+Les versions récentes de Microsoft Defender refusent de l'exécuter : télécharger
+et exécuter en une seule ligne est la forme exacte d'un « dropper » de logiciel
+malveillant, la commande est donc tuée avant de démarrer
+(`Trojan:Win32/Commando.A!ml` ; PowerShell répond simplement *Accès refusé*).
+Cette détection porte sur la forme de la commande, pas sur ce qu'elle
+télécharge — votre machine n'a rien d'anormal. Prenez le ZIP ci-dessus.
 
-```bat
-powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/Defacedz/system-usage-widget/main/web-install.ps1 | iex"
-```
-
-Cette commande télécharge le dépôt dans un dossier temporaire et lance
-`Installer.ps1`. Si vous préférez lire avant d'exécuter — le bon réflexe face à
-n'importe quelle commande `| iex` — clonez le dépôt et double-cliquez sur
-`Installer.bat`.
+</details>
 
 ### Ce que fait l'installateur
 

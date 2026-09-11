@@ -28,22 +28,33 @@ runtime dependencies, MIT) — everything else builds from source.
 
 ## Install
 
-Paste this into **PowerShell** and accept the administrator prompt:
+1. [**Download the repository as a ZIP**](https://github.com/Defacedz/system-usage-widget/archive/refs/heads/main.zip)
+   (or *Code → Download ZIP* at the top of this page)
+2. Extract it anywhere
+3. Double-click **`Installer.bat`** and accept the administrator prompt
+
+Three clicks, nothing to type, and you can read every line before running it —
+the sensible habit for a program that installs a driver.
+
+Updating later takes one click: the widget watches this repository, turns its
+border orange when a newer version exists, and *Update available* in the
+right-click menu downloads and installs it.
+
+<details>
+<summary>One-line install (usually blocked by Defender)</summary>
 
 ```powershell
 irm https://raw.githubusercontent.com/Defacedz/system-usage-widget/main/web-install.ps1 | iex
 ```
 
-Or from **cmd.exe**:
+Recent Microsoft Defender builds refuse to run this: download-and-execute in
+one line is the exact command shape of a malware dropper, so it is killed
+before it starts (`Trojan:Win32/Commando.A!ml`; PowerShell just reports
+*Access denied*). The detection is about the shape of the command, not about
+what it downloads — nothing is wrong with your machine. Use the ZIP above
+instead.
 
-```bat
-powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/Defacedz/system-usage-widget/main/web-install.ps1 | iex"
-```
-
-That downloads this repository to a temporary folder and runs `Installer.ps1`.
-If you would rather see what you are running first — which is the sensible
-habit with any `| iex` command — clone the repository and double-click
-`Installer.bat` instead.
+</details>
 
 ### What the installer does
 
