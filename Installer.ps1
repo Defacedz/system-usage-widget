@@ -21,12 +21,18 @@ try {
     $source = Join-Path $here 'SystemWidget.cs'
     $manifest = Join-Path $here 'app.manifest'
     $sensorLib = Join-Path $here 'lib\LibreHardwareMonitorLib.dll'
-    $hidLib = Join-Path $here 'lib\HidSharp.dll'
+    # LibreHardwareMonitor 0.9.6 plus the assemblies it loads at runtime.
+    $libNames = @(
+        'LibreHardwareMonitorLib.dll', 'HidSharp.dll', 'System.Memory.dll',
+        'System.Runtime.CompilerServices.Unsafe.dll', 'System.Buffers.dll',
+        'RAMSPDToolkit-NDD.dll', 'DiskInfoToolkit.dll', 'BlackSharp.Core.dll'
+    )
+    $libFiles = $libNames | ForEach-Object { Join-Path $here ('lib\' + $_) }
     if (-not (Test-Path $source) -or -not (Test-Path $manifest)) {
         Fail 'SystemWidget.cs or app.manifest not found next to this script.'
     }
-    if (-not (Test-Path $sensorLib) -or -not (Test-Path $hidLib)) {
-        Fail 'lib\LibreHardwareMonitorLib.dll or lib\HidSharp.dll is missing.'
+    foreach ($libFile in $libFiles) {
+        if (-not (Test-Path $libFile)) { Fail ('Missing library: ' + $libFile) }
     }
 
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -35,12 +41,31 @@ try {
         Fail 'This script must run as administrator (use Installer.bat).'
     }
 
-    Write-Host '1/6 Stopping running instances...'
+    Write-Host '1/8 Stopping running instances...'
     Get-Process -Name 'SystemWidget' -ErrorAction SilentlyContinue |
         Stop-Process -Force -ErrorAction SilentlyContinue
     Start-Sleep -Milliseconds 400
 
-    Write-Host '2/6 Building...'
+    # Builds up to 2026.08.24 embedded LibreHardwareMonitor 0.9.3, which
+    # installs WinRing0 - a driver on Microsoft's vulnerable-driver blocklist
+    # (CVE-2020-14979: any local process can reach ring 0 through it). It was
+    # registered here as the service R0SystemWidget. Remove it on the way in,
+    # otherwise updating leaves the hole open on every machine that ran an
+    # older build.
+    Write-Host '2/8 Removing the old WinRing0 driver, if present...'
+    $legacyService = Get-Service -Name 'R0SystemWidget' -ErrorAction SilentlyContinue
+    if ($legacyService) {
+        if ($legacyService.Status -eq 'Running') {
+            Stop-Service -Name 'R0SystemWidget' -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Milliseconds 400
+        }
+        & sc.exe delete 'R0SystemWidget' | Out-Null
+        Write-Host '      service R0SystemWidget deleted.'
+    }
+    Remove-Item (Join-Path (Join-Path $env:ProgramFiles 'SystemWidget') 'SystemWidget.sys') `
+        -Force -ErrorAction SilentlyContinue
+
+    Write-Host '3/8 Building...'
     $framework = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319'
     if (-not (Test-Path (Join-Path $framework 'csc.exe'))) {
         $framework = Join-Path $env:WINDIR 'Microsoft.NET\Framework\v4.0.30319'
@@ -66,7 +91,7 @@ try {
         Fail 'Build failed (see messages above).'
     }
 
-    Write-Host '3/6 Local signing certificate...'
+    Write-Host '4/8 Local signing certificate...'
     $subject = 'CN=SystemWidget Local'
     $certificate = Get-ChildItem Cert:\LocalMachine\My -ErrorAction SilentlyContinue |
         Where-Object { $_.Subject -eq $subject -and $_.HasPrivateKey } |
@@ -76,7 +101,7 @@ try {
             -CertStoreLocation 'Cert:\LocalMachine\My' -NotAfter (Get-Date).AddYears(10)
     }
 
-    Write-Host '4/6 Trusting the certificate...'
+    Write-Host '5/8 Trusting the certificate...'
     $certificateFile = Join-Path $env:TEMP 'SystemWidgetLocal.cer'
     Export-Certificate -Cert $certificate -FilePath $certificateFile | Out-Null
     Import-Certificate -FilePath $certificateFile `
@@ -85,7 +110,7 @@ try {
         -CertStoreLocation 'Cert:\LocalMachine\TrustedPublisher' | Out-Null
     Remove-Item $certificateFile -Force -ErrorAction SilentlyContinue
 
-    Write-Host '5/6 Signing and installing...'
+    Write-Host '6/8 Signing and installing...'
     $signature = Set-AuthenticodeSignature -FilePath $temporaryExe `
         -Certificate $certificate -HashAlgorithm SHA256
     if ($signature.Status -ne 'Valid') {
@@ -94,10 +119,56 @@ try {
     $destinationDirectory = Join-Path $env:ProgramFiles 'SystemWidget'
     New-Item -ItemType Directory -Path $destinationDirectory -Force | Out-Null
     Copy-Item $temporaryExe (Join-Path $destinationDirectory 'SystemWidget.exe') -Force
-    Copy-Item $sensorLib, $hidLib $destinationDirectory -Force
+    Copy-Item $libFiles $destinationDirectory -Force
     Remove-Item $temporaryExe -Force -ErrorAction SilentlyContinue
 
-    Write-Host '6/6 Starting...'
+    # LibreHardwareMonitor 0.9.6 reads the CPU sensor through PawnIO, the
+    # signed driver that replaced WinRing0. PawnIO ships as its own installer,
+    # so fetch the official signed build and run it quietly. Everything is
+    # checked before anything executes: exact SHA-256 of the pinned release,
+    # then the Authenticode signature. Without PawnIO the widget still runs -
+    # the CPU thermometer simply stays blank.
+    Write-Host '7/8 CPU sensor driver (PawnIO)...'
+    $pawnKeys = @(
+        'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\PawnIO',
+        'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\PawnIO'
+    )
+    $pawnInstalled = $false
+    foreach ($pawnKey in $pawnKeys) {
+        if (Test-Path $pawnKey) { $pawnInstalled = $true }
+    }
+    if ($pawnInstalled) {
+        Write-Host '      already installed.'
+    }
+    else {
+        $pawnUrl = 'https://github.com/namazso/PawnIO.Setup/releases/download/2.2.0/PawnIO_setup.exe'
+        $pawnSha = '1F519A22E47187F70A1379A48CA604981C4FCF694F4E65B734AAA74A9FBA3032'
+        $pawnExe = Join-Path $env:TEMP 'PawnIO_setup.exe'
+        try {
+            Remove-Item $pawnExe -Force -ErrorAction SilentlyContinue
+            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+            Invoke-WebRequest -Uri $pawnUrl -OutFile $pawnExe -UseBasicParsing
+            $hash = (Get-FileHash $pawnExe -Algorithm SHA256).Hash
+            if ($hash -ne $pawnSha) { throw ('unexpected SHA-256: ' + $hash) }
+            $pawnSignature = Get-AuthenticodeSignature $pawnExe
+            if ($pawnSignature.Status -ne 'Valid') { throw ('signature ' + $pawnSignature.Status) }
+            Write-Host ('      signed by ' + $pawnSignature.SignerCertificate.Subject)
+            $run = Start-Process $pawnExe -ArgumentList '/quiet', '/norestart' -Wait -PassThru
+            if ($run.ExitCode -ne 0 -and $run.ExitCode -ne 3010) {
+                throw ('installer returned ' + $run.ExitCode)
+            }
+            Write-Host '      installed.'
+        }
+        catch {
+            Write-Host ('      skipped (' + $_.Exception.Message + ').') -ForegroundColor Yellow
+            Write-Host '      CPU thermometer stays blank; install PawnIO from https://pawnio.eu to enable it.'
+        }
+        finally {
+            Remove-Item $pawnExe -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    Write-Host '8/8 Starting...'
     # Started from this elevated script, the widget gets the administrator
     # rights the embedded sensor library needs to read the CPU temperature.
     Start-Process (Join-Path $destinationDirectory 'SystemWidget.exe')

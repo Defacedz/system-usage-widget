@@ -16,6 +16,13 @@ config.json
 tokens.json
 *.credentials.json
 
-# The embedded sensor library (MIT) is the one shipped binary
+# The embedded sensor library (MIT) and the assemblies it loads at runtime
+# are the project's shipped binaries; everything else builds from source.
 !lib/LibreHardwareMonitorLib.dll
 !lib/HidSharp.dll
+!lib/System.Memory.dll
+!lib/System.Runtime.CompilerServices.Unsafe.dll
+!lib/System.Buffers.dll
+!lib/RAMSPDToolkit-NDD.dll
+!lib/DiskInfoToolkit.dll
+!lib/BlackSharp.Core.dll

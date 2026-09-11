@@ -13,15 +13,18 @@ and the on-screen keyboard use. It re-asserts topmost only when the taskbar
 has actually covered it, instead of twice a second — no flicker.
 
 **Temperatures**: the GPU thermometer shows the NVIDIA core temperature (via
-`nvidia-smi`). The CPU thermometer reads the CPU's own sensor ("CPU Package")
-through the embedded [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor)
-library (MIT) — the engine behind most sensor tools. That read needs
-administrator rights: the installer starts the widget elevated, and the
-*Start with Windows* option registers a scheduled task with highest
-privileges, so no UAC prompt appears at logon. Without those rights the
-thermometer stays blank rather than showing a made-up number. This is the
-project's one shipped binary (`lib/LibreHardwareMonitorLib.dll`, with its
-`HidSharp.dll` dependency, both MIT) — everything else builds from source.
+`nvidia-smi`, no driver involved). The CPU thermometer reads the CPU's own
+sensor ("CPU Package", or Tctl/Tdie on AMD) through the embedded
+[LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor)
+0.9.6 (MIT) — the engine behind most sensor tools. Reading that sensor means
+talking to the CPU directly, which no user-mode program may do, so a kernel
+driver is required; see [The CPU sensor driver](#the-cpu-sensor-driver) below.
+The read also needs administrator rights: the installer starts the widget
+elevated, and *Start with Windows* registers a scheduled task with highest
+privileges, so no UAC prompt appears at logon. Without either the driver or
+those rights the thermometer stays blank rather than showing a made-up
+number. The shipped binaries live in `lib/` (LibreHardwareMonitor and its
+runtime dependencies, MIT) — everything else builds from source.
 
 ## Install
 
@@ -92,9 +95,31 @@ habit with any `| iex` command — clone the repository and double-click
 | RAM | `GlobalMemoryStatusEx` |
 | GPU W, VRAM | `nvidia-smi --query-gpu=...`, one hidden invocation per second |
 
-No driver, no kernel module, no elevated helper service. The widget runs as
-your own user and reads nothing else; there is no network access and no
-telemetry.
+Those four readings use documented Windows APIs and `nvidia-smi` only. The
+CPU **temperature** is the one exception, and it needs a kernel driver:
+
+## The CPU sensor driver
+
+CPU temperature lives in a register only kernel code may read. LibreHardwareMonitor
+0.9.6 reads it through [PawnIO](https://pawnio.eu), a signed driver that runs
+small verified modules instead of handing ring 0 to whoever asks. **The
+installer downloads and installs it for you**, from its official release, after
+checking the exact SHA-256 of the file and its Authenticode signature. If that
+fails, installation carries on and the CPU thermometer simply stays blank.
+
+PawnIO is a separate program: remove it from *Settings → Apps* like any other.
+The widget keeps working without it.
+
+**If you installed a build from before September 2026**, it embedded
+LibreHardwareMonitor 0.9.3, which uses **WinRing0** — a driver on Microsoft's
+vulnerable-driver blocklist ([CVE-2020-14979](https://nvd.nist.gov/vuln/detail/CVE-2020-14979):
+any local program can reach ring 0 through it), which recent Defender builds
+flag as `VulnerableDriver:WinNT/Winring0`. Updating removes it: the installer
+stops and deletes the `R0SystemWidget` service and its `SystemWidget.sys`
+file. That is why this change exists.
+
+Apart from that driver the widget runs as your own user, reads nothing else,
+accesses no network and sends no telemetry.
 
 ## Adding a language
 

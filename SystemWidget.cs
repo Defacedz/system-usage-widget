@@ -274,7 +274,7 @@ namespace SystemWidgetApp
     public static class Updates
     {
         // Bump this when publishing.
-        public const string Version = "2026.08.30";
+        public const string Version = "2026.09.11";
 
         const string SourceUrl = "https://raw.githubusercontent.com/Defacedz/system-usage-widget/main/SystemWidget.cs";
         public const string WebInstall = "https://raw.githubusercontent.com/Defacedz/system-usage-widget/main/web-install.ps1";

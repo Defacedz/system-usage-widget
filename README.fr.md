@@ -14,17 +14,19 @@ tâches l'a réellement recouverte, au lieu de deux fois par seconde — fini le
 clignotement.
 
 **Températures** : le thermomètre GPU affiche la température du cœur NVIDIA
-(via `nvidia-smi`). Le thermomètre CPU lit le capteur du processeur lui-même
-(« CPU Package ») grâce à la bibliothèque
-[LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor)
-embarquée (MIT) — le moteur de la plupart des outils de capteurs. Cette
-lecture exige les droits administrateur : l'installateur lance le widget
+(via `nvidia-smi`, sans aucun pilote). Le thermomètre CPU lit le capteur du
+processeur lui-même (« CPU Package », ou Tctl/Tdie sur AMD) grâce à la
+bibliothèque [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor)
+0.9.6 embarquée (MIT) — le moteur de la plupart des outils de capteurs. Lire
+ce capteur revient à interroger le processeur directement, ce qu'aucun
+programme ordinaire n'a le droit de faire : un pilote noyau est donc
+nécessaire, voir [Le pilote du capteur CPU](#le-pilote-du-capteur-cpu). La
+lecture exige aussi les droits administrateur : l'installateur lance le widget
 élevé, et l'option *Lancer au démarrage de Windows* crée une tâche planifiée
 avec privilèges maximaux — aucune fenêtre UAC à l'ouverture de session. Sans
-ces droits, le thermomètre reste vide plutôt que d'inventer un chiffre. C'est
-le seul binaire livré du projet (`lib/LibreHardwareMonitorLib.dll`, avec sa
-dépendance `HidSharp.dll`, toutes deux MIT) — tout le reste se compile depuis
-les sources.
+le pilote ou sans ces droits, le thermomètre reste vide plutôt que d'inventer
+un chiffre. Les binaires livrés sont dans `lib/` (LibreHardwareMonitor et ses
+dépendances d'exécution, MIT) — tout le reste se compile depuis les sources.
 
 ## Installation
 
@@ -97,9 +99,34 @@ n'importe quelle commande `| iex` — clonez le dépôt et double-cliquez sur
 | RAM | `GlobalMemoryStatusEx` |
 | GPU W, VRAM | `nvidia-smi --query-gpu=...`, un appel masqué par seconde |
 
-Aucun pilote, aucun module noyau, aucun service privilégié. Le widget tourne
-sous votre propre compte et ne lit rien d'autre ; il n'accède pas au réseau et
-n'envoie aucune télémétrie.
+Ces quatre mesures n'utilisent que des fonctions documentées de Windows et
+`nvidia-smi`. La **température du processeur** fait exception : elle réclame un
+pilote noyau.
+
+## Le pilote du capteur CPU
+
+La température du processeur se trouve dans un registre que seul le noyau peut
+lire. LibreHardwareMonitor 0.9.6 y accède via [PawnIO](https://pawnio.eu), un
+pilote signé qui n'exécute que de petits modules vérifiés, au lieu d'ouvrir le
+noyau à qui le demande. **L'installateur le télécharge et l'installe pour
+vous**, depuis sa publication officielle, après avoir vérifié l'empreinte
+SHA-256 exacte du fichier et sa signature Authenticode. En cas d'échec,
+l'installation continue et le thermomètre CPU reste simplement vide.
+
+PawnIO est un programme distinct : retirez-le depuis *Paramètres → Applications*
+comme n'importe quel autre. Le widget continue de fonctionner sans lui.
+
+**Si vous avez installé une version antérieure à septembre 2026**, elle
+embarquait LibreHardwareMonitor 0.9.3, qui utilise **WinRing0** — un pilote
+inscrit sur la liste noire de Microsoft ([CVE-2020-14979](https://nvd.nist.gov/vuln/detail/CVE-2020-14979) :
+n'importe quel programme local peut atteindre le noyau à travers lui), que les
+versions récentes de Defender signalent sous le nom
+`VulnerableDriver:WinNT/Winring0`. La mise à jour le supprime : l'installateur
+arrête et efface le service `R0SystemWidget` ainsi que son fichier
+`SystemWidget.sys`. C'est la raison d'être de ce changement.
+
+En dehors de ce pilote, le widget tourne sous votre propre compte, ne lit rien
+d'autre, n'accède pas au réseau et n'envoie aucune télémétrie.
 
 ## Ajouter une langue
 
