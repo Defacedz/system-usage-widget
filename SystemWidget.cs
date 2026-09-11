@@ -274,7 +274,7 @@ namespace SystemWidgetApp
     public static class Updates
     {
         // Bump this when publishing.
-        public const string Version = "2026.09.11";
+        public const string Version = "2026.09.12";
 
         const string SourceUrl = "https://raw.githubusercontent.com/Defacedz/system-usage-widget/main/SystemWidget.cs";
         public const string WebInstall = "https://raw.githubusercontent.com/Defacedz/system-usage-widget/main/web-install.ps1";
@@ -1251,26 +1251,93 @@ namespace SystemWidgetApp
                             : (_updateAvailable ? "#CCDA7756" : Theme.Current.Border));
         }
 
-        static int SchTasks(string arguments)
+        // ---------- autostart ----------
+        // Registered as a scheduled task, because reading the CPU sensor
+        // needs administrator rights and a task grants them at logon without
+        // a UAC prompt. Two traps, both paid for:
+        //
+        //  * The task must NOT name this executable as its own program. The
+        //    widget is marked uiAccess, and Task Scheduler refuses to launch
+        //    a uiAccess binary through its elevation path: every logon failed
+        //    with 740 ERROR_ELEVATION_REQUIRED while the task itself looked
+        //    perfectly healthy ("Ready"). It launches cmd.exe instead, an
+        //    ordinary program, which receives the elevated token and hands it
+        //    to the widget - exactly what the installer does, and the
+        //    installer has always worked.
+        //
+        //  * It is registered through the Task Scheduler API rather than
+        //    schtasks.exe: the program and its arguments are separate fields
+        //    there, so the nested quotes a path with a space would otherwise
+        //    need cannot be mis-escaped. Settings.Hidden also keeps the
+        //    launcher from flashing a console at logon.
+        const string TaskName = "SystemWidget";
+
+        static dynamic TaskFolder()
+        {
+            Type type = Type.GetTypeFromProgID("Schedule.Service");
+            dynamic service = Activator.CreateInstance(type);
+            service.Connect();
+            return service.GetFolder("\\");
+        }
+
+        static bool AutostartTaskExists()
+        {
+            try { return TaskFolder().GetTask(TaskName) != null; }
+            catch { return false; }
+        }
+
+        static bool CreateAutostartTask()
         {
             try
             {
-                var start = new ProcessStartInfo
-                {
-                    FileName = "schtasks.exe",
-                    Arguments = arguments,
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    WindowStyle = ProcessWindowStyle.Hidden
-                };
-                using (var process = Process.Start(start))
-                {
-                    if (!process.WaitForExit(5000)) { try { process.Kill(); } catch { } return -1; }
-                    return process.ExitCode;
-                }
+                string exe = System.Reflection.Assembly.GetExecutingAssembly().Location;
+                Type type = Type.GetTypeFromProgID("Schedule.Service");
+                dynamic service = Activator.CreateInstance(type);
+                service.Connect();
+                dynamic folder = service.GetFolder("\\");
+                dynamic definition = service.NewTask(0);
+                definition.RegistrationInfo.Description = "Starts the System Widget at logon.";
+                definition.Triggers.Create(9);                      // at logon
+                dynamic action = definition.Actions.Create(0);      // run a program
+                action.Path = "cmd.exe";
+                action.Arguments = "/c start \"\" \"" + exe + "\"";
+                definition.Principal.RunLevel = 1;                  // highest privileges
+                definition.Settings.Hidden = true;
+                definition.Settings.DisallowStartIfOnBatteries = false;
+                definition.Settings.StopIfGoingOnBatteries = false;
+                definition.Settings.ExecutionTimeLimit = "PT0S";    // never killed
+                folder.RegisterTaskDefinition(TaskName, definition, 6, null, null, 3);
+                return true;
             }
-            catch { return -1; }
+            catch { return false; }
         }
+
+        static void DeleteAutostartTask()
+        {
+            try { TaskFolder().DeleteTask(TaskName, 0); }
+            catch { }
+        }
+
+        // A task written by an older build points straight at this uiAccess
+        // binary and can only fail. Rewrite it once, silently: nobody is
+        // going to re-toggle a menu entry that already looks ticked.
+        public static void RepairAutostartTask()
+        {
+            try
+            {
+                dynamic task = TaskFolder().GetTask(TaskName);
+                if (task == null) return;
+                dynamic actions = task.Definition.Actions;
+                foreach (dynamic action in actions)
+                {
+                    string path = action.Path as string;
+                    if (path != null && path.IndexOf("cmd.exe", StringComparison.OrdinalIgnoreCase) >= 0) return;
+                }
+                CreateAutostartTask();
+            }
+            catch { }
+        }
+
 
         // Claude-styled skin for the context menu: dark rounded panel, orange
         // highlight, same palette as the widget. Replaces the gray system look.
@@ -1544,7 +1611,7 @@ namespace SystemWidgetApp
             string shortcutPath = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.Startup),
                 "System Widget.lnk");
-            autoStart.IsChecked = SchTasks("/Query /TN \"SystemWidget\"") == 0 || File.Exists(shortcutPath);
+            autoStart.IsChecked = AutostartTaskExists() || File.Exists(shortcutPath);
             autoStart.Click += delegate
             {
                 try
@@ -1552,12 +1619,11 @@ namespace SystemWidgetApp
                     if (File.Exists(shortcutPath)) File.Delete(shortcutPath);
                     if (autoStart.IsChecked)
                     {
-                        string exe = System.Reflection.Assembly.GetExecutingAssembly().Location;
-                        SchTasks("/Create /F /SC ONLOGON /RL HIGHEST /TN \"SystemWidget\" /TR \"\\\"" + exe + "\\\"\"");
+                        CreateAutostartTask();
                     }
                     else
                     {
-                        SchTasks("/Delete /F /TN \"SystemWidget\"");
+                        DeleteAutostartTask();
                     }
                 }
                 catch { }
@@ -1608,6 +1674,11 @@ namespace SystemWidgetApp
         [STAThread]
         public static void Main()
         {
+            // A task written by an older build names this uiAccess binary
+            // directly and fails at every logon; rewrite it before anything
+            // else, off the UI path.
+            System.Threading.ThreadPool.QueueUserWorkItem(delegate { MainWindow.RepairAutostartTask(); });
+
             // single instance: the new one replaces the old
             var current = Process.GetCurrentProcess();
             foreach (var process in Process.GetProcessesByName(current.ProcessName))
