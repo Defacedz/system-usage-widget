@@ -274,10 +274,10 @@ namespace SystemWidgetApp
     public static class Updates
     {
         // Bump this when publishing.
-        public const string Version = "2026.09.12";
+        public const string Version = "2026.09.13";
 
         const string SourceUrl = "https://raw.githubusercontent.com/Defacedz/system-usage-widget/main/SystemWidget.cs";
-        public const string WebInstall = "https://raw.githubusercontent.com/Defacedz/system-usage-widget/main/web-install.ps1";
+        const string ArchiveUrl = "https://github.com/Defacedz/system-usage-widget/archive/refs/heads/main.zip";
 
         // Call from a worker thread.
         public static bool Available()
@@ -310,16 +310,53 @@ namespace SystemWidgetApp
             catch { return false; }
         }
 
-        // web-install.ps1 downloads the repository and runs Installer.ps1
-        // elevated; the installer stops this instance and starts the new one.
+        // Updating must not require typing anything: the widget fetches the
+        // repository archive itself, unpacks it, and elevates the LOCAL
+        // installer, which stops this instance and starts the new one.
+        //
+        // The obvious one-liner - powershell "irm <url> | iex" - is the exact
+        // command shape of a malware dropper, and Defender's model kills it
+        // mid-flight (Trojan:Win32/Commando.A!ml, seen 2026-08-28 on the
+        // sister project). No remote code is piped into a shell here.
         public static void Start()
         {
-            try
+            System.Threading.ThreadPool.QueueUserWorkItem(delegate
             {
-                Process.Start("powershell.exe",
-                    "-NoProfile -ExecutionPolicy Bypass -Command \"irm " + WebInstall + " | iex\"");
-            }
-            catch { }
+                try
+                {
+                    string work = Path.Combine(Path.GetTempPath(), "systemwidget-update");
+                    try { Directory.Delete(work, true); } catch { }
+                    Directory.CreateDirectory(work);
+                    string zip = Path.Combine(work, "source.zip");
+
+                    var request = (HttpWebRequest)WebRequest.Create(ArchiveUrl);
+                    request.Method = "GET";
+                    request.Timeout = 60000;
+                    request.ReadWriteTimeout = 60000;
+                    request.UserAgent = "SystemWidget";
+                    using (var response = (HttpWebResponse)request.GetResponse())
+                    using (var source = response.GetResponseStream())
+                    using (var file = File.Create(zip))
+                    {
+                        var buffer = new byte[81920];
+                        int read;
+                        while ((read = source.Read(buffer, 0, buffer.Length)) > 0)
+                            file.Write(buffer, 0, read);
+                    }
+
+                    System.IO.Compression.ZipFile.ExtractToDirectory(zip, work);
+                    string installer = Path.Combine(work, "system-usage-widget-main", "Installer.ps1");
+                    if (!File.Exists(installer)) return;
+                    Process.Start(new ProcessStartInfo
+                    {
+                        FileName = "powershell.exe",
+                        Arguments = "-NoProfile -ExecutionPolicy Bypass -File \"" + installer + "\"",
+                        Verb = "runas",          // one UAC prompt, as before
+                        UseShellExecute = true
+                    });
+                }
+                catch { }
+            });
         }
     }
 

@@ -84,6 +84,7 @@ try {
         /r:System.dll /r:System.Core.dll /r:System.Xaml.dll `
         /r:System.Runtime.Serialization.dll /r:Microsoft.CSharp.dll `
         /r:System.Management.dll `
+        /r:System.IO.Compression.dll /r:System.IO.Compression.FileSystem.dll `
         /r:"$here\lib\LibreHardwareMonitorLib.dll" `
         /r:"$wpf\PresentationFramework.dll" /r:"$wpf\PresentationCore.dll" `
         /r:"$wpf\WindowsBase.dll" $source
