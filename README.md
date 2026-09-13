@@ -36,6 +36,9 @@ runtime dependencies, MIT) — everything else builds from source.
 Three clicks, nothing to type, and you can read every line before running it —
 the sensible habit for a program that installs a driver.
 
+Closed the widget by hand? Double-click **`Launch.bat`** to bring it back — no
+reinstall needed. If it is not installed yet, it offers to run the installer.
+
 Updating later takes one click: the widget watches this repository, turns its
 border orange when a newer version exists, and *Update available* in the
 right-click menu downloads and installs it.

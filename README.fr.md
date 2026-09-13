@@ -38,6 +38,10 @@ dépendances d'exécution, MIT) — tout le reste se compile depuis les sources.
 Trois clics, rien à taper, et vous pouvez lire chaque ligne avant de l'exécuter —
 le bon réflexe pour un programme qui installe un pilote.
 
+Widget fermé à la main ? Double-cliquez sur **`Launch.bat`** pour le relancer —
+sans réinstaller. S'il n'est pas encore installé, il propose de lancer
+l'installateur.
+
 Les mises à jour suivantes tiennent en un clic : le widget surveille ce dépôt,
 son contour passe à l'orange quand une version plus récente existe, et
 *Mise à jour disponible* dans le menu clic droit la télécharge et l'installe.
